@@ -1,0 +1,228 @@
+/* public/css/landing.css */
+body {
+    margin: 0;
+    /* Faded industrial background image with a heavy dark overlay */
+    background-color: #0f1115;
+    background-image: 
+        linear-gradient(rgba(15, 17, 21, 0.88), rgba(15, 17, 21, 0.98)),
+        url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?q=80&w=2000&auto=format&fit=crop'); 
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    color: #f8fafc;
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+}
+
+/* --- NAVIGATION & METALLIC LOGO --- */
+.landing-nav { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 20px 5%; 
+    border-bottom: 1px solid rgba(255,255,255,0.05); 
+    backdrop-filter: blur(12px); 
+    position: fixed; 
+    width: 100%; 
+    top: 0; 
+    z-index: 1000; 
+    box-sizing: border-box;
+}
+
+.nav-brand { 
+    display: flex; 
+    align-items: center; 
+    gap: 12px; 
+}
+
+.brand-text {
+    font-weight: 800; 
+    font-size: 18px; 
+    letter-spacing: -0.5px;
+    color: #f8fafc;
+}
+
+.sm-block-logo {
+    display: flex;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 34px; /* Big, chunky size */
+    font-weight: 900; /* Maximum thickness */
+    letter-spacing: -2px; /* Pulls the S and M closely together */
+    line-height: 1;
+}
+
+/* The Icy Blue 'S' */
+.letter-s {
+    background: linear-gradient(180deg, #a4cfff 0%, #4a8cdb 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0px 0px 8px rgba(74, 140, 219, 0.5)); /* Soft cyan glow */
+}
+
+/* The Silver/White 'M' */
+.letter-m {
+    background: linear-gradient(180deg, #ffffff 0%, #b8c6d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0px 0px 8px rgba(255, 255, 255, 0.3)); /* Soft white glow */
+    margin-left: 2px; /* Slight spacing adjustment */
+}
+
+.nav-links { display: flex; gap: 30px; align-items: center; font-size: 14px; font-weight: 500; }
+.nav-links a { color: #94a3b8; text-decoration: none; transition: color 0.2s; }
+.nav-links a:hover { color: #fff; }
+
+/* Buttons */
+.btn-primary { background: #00bfff; color: #000; border: none; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 16px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(0, 191, 255, 0.2); }
+.btn-primary:hover { transform: translateY(-2px); background: #0099cc; box-shadow: 0 8px 25px rgba(0, 191, 255, 0.4); }
+.nav-btn-secondary { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 9px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.nav-btn-secondary:hover { background: rgba(255,255,255,0.1); }
+.btn-outline { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 14px 28px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-outline:hover { background: rgba(255,255,255,0.1); border-color: #00bfff; color: #00bfff; }
+
+/* --- HERO SECTION --- */
+.hero-section { 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    /* CHANGED: Added bottom padding (80px) to act as a bumper between sections */
+    padding: 120px 5% 80px; 
+    max-width: 1400px; 
+    width: 100%;
+    
+    /* CHANGED: Replaced hard 'height' with 'min-height' to prevent overflow overlapping */
+    min-height: 100vh; 
+    height: auto; 
+    
+    /* Removed max-height: 900px; as it can also cause clipping on narrow screens */
+    margin: 0 auto; 
+    gap: 40px; 
+    box-sizing: border-box;
+}
+
+.hero-content { 
+    flex: 1; 
+    max-width: 600px; 
+    z-index: 10; 
+}
+
+.badge { display: inline-block; padding: 6px 14px; background: rgba(0, 191, 255, 0.1); color: #00bfff; border: 1px solid rgba(0, 191, 255, 0.3); border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 24px;}
+.hero-content h1 { font-size: 64px; font-weight: 800; line-height: 1.1; letter-spacing: -2px; margin-bottom: 24px; }
+.text-highlight { color: #00bfff; } 
+.hero-content p { font-size: 20px; color: #94a3b8; line-height: 1.6; margin-bottom: 40px; }
+.hero-actions { display: flex; gap: 16px; }
+
+/* 3D Visual Catcher */
+.hero-visual { 
+    flex: 1; 
+    width: 100%;
+    max-width: 50%; 
+    position: relative; 
+    /* CHANGED: Replaced height: 100% with a guaranteed minimum height */
+    min-height: 600px; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    min-width: 0; 
+}
+#hero-canvas-container { 
+    width: 100%; 
+    /* CHANGED: Forces the invisible box to physically exist at 600px tall */
+    height: 600px; 
+    position: relative; 
+    z-index: 2; 
+}
+
+.glow-orb { 
+    position: absolute; 
+    width: 500px; 
+    height: 500px; 
+    background: radial-gradient(circle, rgba(0,191,255,0.15) 0%, rgba(0,0,0,0) 60%); 
+    top: 50%; 
+    left: 50%; 
+    transform: translate(-50%, -50%); 
+    z-index: 1; 
+    filter: blur(50px); 
+}
+
+/* --- FEATURES SECTION (Dynamic Layout) --- */
+.features-section { 
+    padding: 40px 5% 100px; 
+    max-width: 1400px; 
+    margin: 0 auto; 
+}
+
+.feature-grid { 
+    display: grid; 
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 24px; 
+}
+
+.feature-card { 
+    background: #161b22; 
+    border: 1px solid #30363d; 
+    padding: 30px 24px; 
+    border-radius: 12px; 
+    transition: all 0.3s ease; 
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-card:hover { 
+    transform: translateY(-8px); 
+    border-color: #00bfff; 
+    box-shadow: 0 10px 30px rgba(0, 191, 255, 0.05);
+}
+
+.f-icon { 
+    width: 48px; 
+    height: 48px; 
+    background: rgba(0, 191, 255, 0.1); 
+    border: 1px solid rgba(0, 191, 255, 0.2); 
+    border-radius: 8px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-size: 24px; 
+    margin-bottom: 20px; 
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover .f-icon {
+    background: rgba(0, 191, 255, 0.2);
+    box-shadow: 0 0 15px rgba(0, 191, 255, 0.4);
+}
+
+.feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #fff; }
+.feature-card p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 0; }
+
+/* Responsive Media Queries */
+@media (max-width: 1100px) {
+    .feature-grid { grid-template-columns: repeat(2, 1fr); } 
+}
+@media (max-width: 650px) {
+    .feature-grid { 
+        grid-template-columns: 1fr; 
+    } 
+    .hero-section {
+        flex-direction: column;
+        height: auto;
+        padding-top: 120px;
+    }
+    .hero-content, .hero-visual {
+        flex: none;
+        width: 100%;
+        max-width: 100%;
+    }
+    .hero-visual {
+        height: 400px; 
+    }
+}
+
+/* Animations */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.fade-up-1 { animation: fadeInUp 0.8s ease-out forwards; opacity: 0;}
+.fade-up-2 { animation: fadeInUp 0.8s ease-out 0.2s forwards; opacity: 0; }
+.fade-up-3 { animation: fadeInUp 0.8s ease-out 0.4s forwards; opacity: 0; }
+.fade-up-4 { animation: fadeInUp 0.8s ease-out 0.6s forwards; opacity: 0; }
+.fade-up-5 { animation: fadeInUp 1s ease-out 0.8s forwards; opacity: 0; }

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surface Mesher | Engineering Portfolio</title>
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    <link rel="stylesheet" href="/css/landing.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <style>
+        /* 1. Remove the max-width limit so it spreads across the entire monitor */
+        .landing-nav, .hero-section, .features-section {
+            box-sizing: border-box !important;
+            max-width: 100% !important; /* Lets it scale infinitely */
+            margin-left: auto !important;
+            margin-right: auto !important;
+            width: 100% !important;
+            padding-left: 6vw !important; /* Dynamic side margins */
+            padding-right: 6vw !important; /* Dynamic side margins */
+        }
+
+        /* 2. Ensure Hero Section scales dynamically side-by-side */
+        @media (min-width: 1024px) {
+            .hero-section {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                gap: 6vw !important; /* The space between text and 3D canvas scales with screen */
+            }
+            .hero-content, .hero-visual {
+                flex: 1 !important; 
+                min-width: 0 !important; 
+            }
+        }
+
+        /* 3. Make the Feature Cards spread out evenly */
+        .feature-grid {
+            display: grid !important;
+            box-sizing: border-box !important;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+            gap: 2.5vw !important; /* The gap between cards scales dynamically */
+            width: 100% !important;
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="landing-nav">
+        <div class="nav-brand">
+            <div class="sm-block-logo">
+                <span class="letter-s">S</span><span class="letter-m">M</span>
+            </div>
+           <span class="brand-text">SURFACE MESHER</span>
+        </div>
+        <div class="nav-links">
+            <a href="#features">Engine Features</a>
+            
+            <a href="https://drive.google.com/file/d/1zkJ1AI_eQoPRc4P4cAILUNvS60Q5W2tv/view?usp=drive_link" target="_blank" rel="noopener noreferrer">Architecture</a>
+            
+            <button id="nav-login-btn" class="nav-btn-secondary" onclick="window.location.href='auth.html'">Log In</button>
+        </div>
+    </nav>
+
+    <header class="hero-section">
+        <div class="hero-content">
+            <div class="badge fade-up-1">C++ / WebGL Project</div>
+            <h1 class="fade-up-2">Surface<br><span class="text-highlight"> Mesher</span></h1>
+            <p class="fade-up-3">A custom-built meshing pipeline designed for computational geometry. Generates isotropic, watertight surface meshes from raw CAD data with FEA validation Heat-map.</p>
+            <div class="hero-actions fade-up-4">
+                <button id="hero-start-btn" class="btn-primary" onclick="window.location.href='auth.html'">Get Started</button>
+                <button class="btn-outline" onclick="window.location.href='https://github.com/swostideep/mesh-stage'">View GitHub</button>
+            </div>
+        </div>
+        
+        <div class="hero-visual fade-up-5">
+            <div id="hero-canvas-container"></div>
+            <div class="glow-orb"></div>
+        </div>
+    </header>
+
+    <section id="features" class="features-section">
+        <div class="feature-grid">
+            <div class="feature-card fade-up-2">
+                <div class="f-icon">🌡️</div>
+                <h3>FEA Quality Heatmap</h3>
+                <p>Calculates 3D triangle skewness in C++ and projects the data as an interactive RGB heatmap directly onto the WebGL model.</p>
+            </div>
+            <div class="feature-card fade-up-3">
+                <div class="f-icon">👁️</div>
+                <h3>Surface Manager</h3>
+                <p>Parses complex STEP/IGES assemblies, extracting distinct topological faces to allow individual surface visibility toggling.</p>
+            </div>
+            <div class="feature-card fade-up-4">
+                <div class="f-icon">📐</div>
+                <h3>Curvature-Adaptive Sizing</h3>
+                <p>Utilizes OpenCASCADE to evaluate local surface curvature, dynamically refining mesh density around sharp features.</p>
+            </div>
+            <div class="feature-card fade-up-5">
+                <div class="f-icon">⚡</div>
+                <h3>Multi-Threaded Engine</h3>
+                <p>Executes parallel face-batching across available CPU cores via `std::async` for rapid geometric processing.</p>
+            </div>
+        </div>
+    </section>
+
+    <script type="module" src="/js/landing3d.js"></script>
+</body>
+</html>

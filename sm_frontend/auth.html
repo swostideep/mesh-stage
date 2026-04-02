@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In | Surface Mesher</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    <link rel="stylesheet" href="/css/auth.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        .google-btn-wrapper {
+            display: flex; justify-content: center; margin-bottom: 24px; margin-top: 16px;
+            min-height: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-layout">
+        <div class="auth-form-section">
+            <div class="form-container">
+                <a href="index.html" class="back-link">← Back to Home</a>
+                <div class="auth-brand">
+                    <div class="sm-block-logo"><span class="letter-s">S</span><span class="letter-m">M</span></div>
+                    <span class="brand-text">SURFACE MESHER</span>
+                </div>
+
+                <h1 id="auth-title">Welcome back</h1>
+                <p id="auth-subtitle">Log in to access your meshing engine.</p>
+
+                <div class="google-btn-wrapper">
+                    <div id="g_id_onload"
+                         data-client_id="110719759931-vmhtd8h2tma0d6ap9827ujuu2u11gt20.apps.googleusercontent.com"
+                         data-callback="handleCredentialResponse"
+                         data-auto_prompt="false">
+                    </div>
+                    <div class="g_id_signin" 
+                         data-type="standard" 
+                         data-size="large" 
+                         data-theme="filled_black" 
+                         data-text="sign_in_with" 
+                         data-shape="rectangular" 
+                         data-logo_alignment="left" 
+                         data-width="320">
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; text-align: center; margin-bottom: 24px;">
+                    <div style="flex: 1; border-bottom: 1px solid #e4e4e7;"></div>
+                    <span style="padding: 0 10px; color: #71717a; font-size: 12px; font-weight: 600; text-transform: uppercase;">Or continue with email</span>
+                    <div style="flex: 1; border-bottom: 1px solid #e4e4e7;"></div>
+                </div>
+
+                <form id="auth-form">
+                    <div class="input-group" id="username-group" style="display: none;">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" placeholder="EngineeringDoe">
+                    </div>
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" placeholder="you@company.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" placeholder="••••••••" required>
+                    </div>
+                    <div id="auth-error" style="color: #ef4444; font-size: 13px; margin-bottom: 16px; font-weight: 600; display: none;"></div>
+                    <button type="submit" class="btn-primary auth-submit" id="submit-btn">Log In</button>
+                </form>
+
+                <div class="auth-toggle">
+                    <span id="toggle-text">Don't have an account?</span> 
+                    <button type="button" id="toggle-mode-btn" class="text-btn">Sign up</button>
+                </div>
+            </div>
+        </div>
+       <div class="auth-visual-section">
+            <div class="visual-overlay"></div>
+            <div class="glow-orb"></div>
+            <div class="visual-content">
+                <h2>Isotropic<br><span class="text-highlight">Surface Meshing</span></h2>
+                <p>Access the custom C++ meshing pipeline. Generate watertight meshes from raw CAD data with real-time FEA validation.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isLogin = true;
+        const toggleBtn = document.getElementById('toggle-mode-btn');
+        const title = document.getElementById('auth-title');
+        const subtitle = document.getElementById('auth-subtitle');
+        const submitBtn = document.getElementById('submit-btn');
+        const toggleText = document.getElementById('toggle-text');
+        const usernameGroup = document.getElementById('username-group');
+        const authForm = document.getElementById('auth-form');
+        const errorDiv = document.getElementById('auth-error');
+
+        toggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            isLogin = !isLogin;
+            errorDiv.style.display = 'none';
+
+            if (isLogin) {
+                title.textContent = "Welcome back";
+                subtitle.textContent = "Log in to access your meshing engine.";
+                submitBtn.textContent = "Log In";
+                toggleText.textContent = "Don't have an account?";
+                toggleBtn.textContent = "Sign up";
+                usernameGroup.style.display = "none";
+            } else {
+                title.textContent = "Create an account";
+                subtitle.textContent = "Start generating isotropic surface meshes today.";
+                submitBtn.textContent = "Create Account";
+                toggleText.textContent = "Already have an account?";
+                toggleBtn.textContent = "Log in";
+                usernameGroup.style.display = "flex";
+            }
+        });
+
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const username = document.getElementById('username').value;
+            
+            errorDiv.style.display = 'none';
+            submitBtn.textContent = "Processing...";
+
+            const endpoint = isLogin ? '/api/login' : '/api/register';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(isLogin ? { email, password } : { email, password, username })
+                });
+
+                const data = await response.json();
+
+                if (data.token) {
+                    localStorage.setItem('token', data.token);
+                    
+                    // Failsafe to prevent "undefined"
+                    const safeName = data.user?.username || email.split('@')[0];
+                    localStorage.setItem('sm_username', safeName);
+                    
+                    window.location.href = 'dashboard.html';
+                } else {
+                    errorDiv.textContent = data.error || "Authentication failed.";
+                    errorDiv.style.display = 'block';
+                    submitBtn.textContent = isLogin ? "Log In" : "Create Account";
+                }
+            } catch (err) {
+                errorDiv.textContent = "Server connection failed. Is the backend running?";
+                errorDiv.style.display = 'block';
+                submitBtn.textContent = isLogin ? "Log In" : "Create Account";
+            }
+        });
+
+        async function handleCredentialResponse(response) {
+            errorDiv.style.display = 'none';
+            submitBtn.textContent = "Authenticating with Google...";
+            
+            try {
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: response.credential })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('token', data.token);
+                    
+                    // Failsafe to prevent "undefined"
+                    const safeName = data.user?.username || data.user?.email.split('@')[0] || 'Engineer';
+                    localStorage.setItem('sm_username', safeName);
+                    
+                    window.location.href = 'dashboard.html';
+                } else {
+                    errorDiv.textContent = data.error || 'Google Authentication failed';
+                    errorDiv.style.display = 'block';
+                    submitBtn.textContent = isLogin ? "Log In" : "Create Account";
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Server error during Google Sign-In.';
+                errorDiv.style.display = 'block';
+                submitBtn.textContent = isLogin ? "Log In" : "Create Account";
+            }
+        }
+    </script>
+</body>
+</html>

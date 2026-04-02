@@ -1,0 +1,48 @@
+# ==========================================
+# VS Code / Editor Settings
+# ==========================================
+.vscode/
+
+# ==========================================
+# Node.js Backend & Security
+# ==========================================
+node_modules/
+sm_backend/node_modules/
+.env
+npm-debug.log
+
+# ==========================================
+# App-Specific Data (CRITICAL)
+# ==========================================
+# Do not push massive CAD files or user meshes to GitHub!
+sm_backend/uploads/
+*.obj
+*.step
+*.stp
+*.iges
+*.igs
+
+# ==========================================
+# C++ & CMake Build Artifacts
+# ==========================================
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+*.o
+*.out
+cad_test
+sm_backend/engine/
+
+# ==========================================
+# Mac OS System Files
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ==========================================
+# Frontend (If you use build tools later)
+# ==========================================
+sm_frontend/node_modules/
+sm_frontend/dist/
