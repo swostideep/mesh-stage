@@ -58,7 +58,9 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'))
 });
 const upload = multer({ storage });
+
 let sseClients = [];
+let activeEngineProcess = null; // <-- ADDED: The "Leash" for the C++ engine
 
 // --- THE WORKER DAEMON ---
 const worker = new Worker('meshQueue', async (job) => {
@@ -69,10 +71,13 @@ const worker = new Worker('meshQueue', async (job) => {
     return new Promise((resolve, reject) => {
         broadcastSSE({ log: `\n[QUEUE] Processing ${path.basename(inputPath)}...` });
         const enginePath = path.join(__dirname, 'engine', 'voronoi_mesh'); 
+        
         const engine = spawn(enginePath, [inputPath, density, outputPath, defeatureTol, patchHoles, growthRate, proximity]);
+        activeEngineProcess = engine; // <-- ADDED: Save the exact process to our leash
+        
         let finalStats = { v: 0, t: 0, skew: 0, bad: 0 };
      
-    engine.stdout.on('data', (data) => {
+        engine.stdout.on('data', (data) => {
             const output = data.toString();
             console.log(output); // Shows in Render logs
             broadcastSSE({ log: output }); // Sends to frontend
@@ -96,7 +101,10 @@ const worker = new Worker('meshQueue', async (job) => {
 
         engine.stderr.on('data', (data) => broadcastSSE({ log: `[ERROR] ${data.toString()}` }));
 
-        engine.on('close', async (code) => {
+        // UPDATED: Catch the signal so we know if it was killed manually
+        engine.on('close', async (code, signal) => {
+            activeEngineProcess = null; // <-- ADDED: Clear the leash when done
+
             if (code === 0) {
                 await MeshJob.findByIdAndUpdate(jobId, {
                     status: 'completed', vertices: finalStats.v, triangles: finalStats.t, maxSkewness: finalStats.skew,
@@ -106,7 +114,7 @@ const worker = new Worker('meshQueue', async (job) => {
                 resolve({ meshUrl: `/uploads/${outputFilename}` });
             } else {
                 await MeshJob.findByIdAndUpdate(jobId, { status: 'failed' });
-                reject(new Error(`Engine exited with code ${code}`));
+                reject(new Error(`Engine exited with code ${code} / signal ${signal}`));
             }
         });
     });
@@ -117,7 +125,6 @@ const worker = new Worker('meshQueue', async (job) => {
 // ==========================================
 
 // --- GOOGLE AUTHENTICATION ---
-// --- GOOGLE AUTHENTICATION (DEBUG VERSION) ---
 app.post('/api/auth/google', async (req, res) => {
     try {
         const { token } = req.body;
@@ -150,7 +157,6 @@ app.post('/api/auth/google', async (req, res) => {
 
     } catch (err) {
         console.error('\n[ERROR] Google Auth failed:', err.message);
-        // THIS IS THE MAGIC LINE: It sends the actual crash reason to your screen
         res.status(500).json({ error: `Server Crash Reason: ${err.message}` });
     }
 });
@@ -212,20 +218,25 @@ app.post('/api/mesh', [auth, upload.single('cadFile')], async (req, res) => {
         res.json({ success: true, meshUrl: result.meshUrl });
     } catch (error) { res.status(500).json({ success: false, error: 'Failed to process mesh.' }); }
 });
-// Add this near your other routes
+
+// UPDATED: Native Node.js Kill Switch
 app.post('/api/mesh/stop', auth, (req, res) => {
     try {
-        // This kills any process named 'voronoi_mesh' owned by the server
-        const kill = spawn('pkill', ['-u', 'node', '-9', 'voronoi_mesh']);
-        
-        kill.on('close', (code) => {
+        if (activeEngineProcess) {
+            // Use native Node.js to instantly terminate the exact child process
+            activeEngineProcess.kill('SIGKILL');
+            activeEngineProcess = null; // Drop the leash
+            
             broadcastSSE({ log: "\n[SYSTEM] Meshing process forcibly terminated by user." });
             res.json({ success: true, message: "Engine stopped." });
-        });
+        } else {
+            res.json({ success: true, message: "No active engine to stop." });
+        }
     } catch (err) {
         res.status(500).json({ error: "Failed to kill process." });
     }
 });
+
 app.get('/api/history', auth, async (req, res) => {
     try {
         const jobs = await MeshJob.find({ userId: req.user.userId, status: 'completed' }).sort({ createdAt: -1 }).limit(10);
