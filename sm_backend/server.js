@@ -212,7 +212,20 @@ app.post('/api/mesh', [auth, upload.single('cadFile')], async (req, res) => {
         res.json({ success: true, meshUrl: result.meshUrl });
     } catch (error) { res.status(500).json({ success: false, error: 'Failed to process mesh.' }); }
 });
-
+// Add this near your other routes
+app.post('/api/mesh/stop', auth, (req, res) => {
+    try {
+        // This kills any process named 'voronoi_mesh' owned by the server
+        const kill = spawn('pkill', ['-u', 'node', '-9', 'voronoi_mesh']);
+        
+        kill.on('close', (code) => {
+            broadcastSSE({ log: "\n[SYSTEM] Meshing process forcibly terminated by user." });
+            res.json({ success: true, message: "Engine stopped." });
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to kill process." });
+    }
+});
 app.get('/api/history', auth, async (req, res) => {
     try {
         const jobs = await MeshJob.find({ userId: req.user.userId, status: 'completed' }).sort({ createdAt: -1 }).limit(10);

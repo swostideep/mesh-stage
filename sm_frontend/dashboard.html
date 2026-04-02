@@ -30,6 +30,7 @@
             --accent-hover: #0284c7;
             --header-bg: #fafafa;
             --error: #ef4444;
+            --warning: #f59e0b;
         }
 
         [data-theme='dark'] {
@@ -104,6 +105,12 @@
         .tree-checkbox { accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
         .tree-icon { color: var(--text-muted); flex-shrink: 0; }
 
+        .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(16px); }
     </style>
 </head>
 <body> 
@@ -119,6 +126,10 @@
             <button class="tool-btn primary" id="genMeshBtn" disabled style="opacity: 0.5; cursor: not-allowed; padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: 4px; border: none; background: var(--accent); color: white; display: flex; align-items: center; gap: 6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <span>Generate Mesh</span>
+            </button>
+            <button class="tool-btn" id="stopMeshBtn" style="display: none; padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: 4px; border: none; background: var(--error); color: white; align-items: center; gap: 6px; cursor: pointer;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                <span>Stop Meshing</span>
             </button>
 
             <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
@@ -149,7 +160,7 @@
                 </button>
 
                 <span id="status-bar" style="font-weight: 700; color: var(--text-muted); font-size: 9px; letter-spacing: 0.5px; background: var(--header-bg); padding: 4px 8px; border-radius: 12px; border: 1px solid var(--border);">SYSTEM IDLE</span>
-<span style="font-weight: 700; color: var(--accent); font-size: 11px; margin-left: 8px;" id="display-username"></span>
+                <span style="font-weight: 700; color: var(--accent); font-size: 11px; margin-left: 8px;" id="display-username"></span>
                 <button id="logoutBtn" style="border:none; color: var(--error); background: transparent; font-weight: 700; cursor: pointer; font-size: 12px;">Logout</button>
             </div>
         </div>
@@ -308,8 +319,13 @@
         
         const dropZone = document.getElementById('dropZone');
         const dropZoneText = document.getElementById('dropZoneText');
+        const stopMeshBtn = document.getElementById('stopMeshBtn');
+        const dropZoneArea = document.getElementById('dropZone');
         
+        // --- ADDED GLOBALS FOR MESH CONTROL ---
         let stagedFile = null;
+        let currentModel = null;
+        let activeSSE = null; // Tracks the EventSource to kill it on Stop
 
         // --- DRAG & DROP LOGIC ---
         dropZone.onclick = () => fileInput.click();
@@ -345,6 +361,41 @@
             genMeshBtn.disabled = false; genMeshBtn.style.opacity = "1"; genMeshBtn.style.cursor = "pointer";
             addLog(`[SYSTEM] Staged file: ${file.name}. Ready to generate.`);
         }
+
+        // --- UI LOCK/UNLOCK MECHANISM ---
+        function toggleMeshLock(isMeshing) {
+            if (isMeshing) {
+                genMeshBtn.style.display = 'none';
+                stopMeshBtn.style.display = 'flex';
+                dropZoneArea.style.pointerEvents = 'none'; 
+                dropZoneArea.style.opacity = '0.5';
+            } else {
+                genMeshBtn.style.display = 'flex';
+                stopMeshBtn.style.display = 'none';
+                dropZoneArea.style.pointerEvents = 'all';
+                dropZoneArea.style.opacity = '1';
+                genMeshBtn.disabled = false;
+                genMeshBtn.style.opacity = "1";
+                genMeshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Generate Mesh</span>`;
+            }
+        }
+
+        // --- STOP MESHING LOGIC ---
+        stopMeshBtn.onclick = async () => {
+            if (!confirm("Stop the current meshing engine? This will terminate the server process.")) return;
+            try {
+                const res = await fetch('https://swostideep-mesh-stage-api.hf.space/api/mesh/stop', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    if (activeSSE) activeSSE.close(); // Close the streaming connection
+                    toggleMeshLock(false);
+                    setStatus("PROCESS TERMINATED", "var(--error)", "transparent");
+                    addLog("\n[USER] Emergency stop triggered. Engine process killed.");
+                }
+            } catch (err) { console.error("Stop failed:", err); }
+        };
 
         // --- UI BINDINGS ---
         meshDensitySlider.oninput = (e) => { densityDisplay.innerText = e.target.value; };
@@ -422,7 +473,7 @@
 
         // --- HISTORY & EXPORT ---
         async function fetchUserHistory() {
-            const token = localStorage.getItem('token'); if(!token) return;
+            if(!token) return;
             try {
                 const res = await fetch('https://swostideep-mesh-stage-api.hf.space/api/history', { headers: { 'Authorization': `Bearer ${token}` } });
                 const history = await res.json();
@@ -448,7 +499,7 @@
         window.fetchUserHistory = fetchUserHistory;
 
         window.downloadMesh = async (jobId, filename) => {
-            const token = localStorage.getItem('token'); const format = document.getElementById(`format_${jobId}`).value; 
+            const format = document.getElementById(`format_${jobId}`).value; 
             const res = await fetch(`https://swostideep-mesh-stage-api.hf.space/api/download/${jobId}`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (res.ok) {
                 const blob = await res.blob(); const url = window.URL.createObjectURL(blob);
@@ -459,7 +510,6 @@
 
         window.deleteMesh = async (jobId) => {
             if(!confirm("Permanently delete this mesh and its data?")) return;
-            const token = localStorage.getItem('token');
             const res = await fetch(`https://swostideep-mesh-stage-api.hf.space/api/mesh/${jobId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             if(res.ok) { fetchUserHistory(); if (currentModel) { scene.remove(currentModel); currentModel = null; surfaceListUI.innerHTML = ''; } }
         };
@@ -476,8 +526,6 @@
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.5); dirLight.position.set(200, 400, 200); scene.add(dirLight);
         scene.add(new THREE.AxesHelper(150));
 
-        let currentModel = null;
-        
         const planeX = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
         const planeY = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -503,25 +551,16 @@
             const badElem = document.getElementById('stat-bad'); badElem.innerText = bad !== null ? bad : "--"; badElem.style.color = parseInt(bad) > 0 ? "var(--error)" : "var(--text-main)";
 
             try {
-                const token = localStorage.getItem('token');
                 const fullUrl = url.startsWith('http') ? url : `https://swostideep-mesh-stage-api.hf.space/${url.replace(/^\//, '')}`;
-                
                 console.log("[SYSTEM] Attempting to fetch 3D model from:", fullUrl);
                 
                 const response = await fetch(fullUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-                
-                if (!response.ok) {
-                    throw new Error(`Server rejected the download. Status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`Server rejected the download. Status: ${response.status}`);
 
                 const objText = await response.text(); 
-                
-                if (objText.trim().startsWith('<!DOCTYPE') || objText.trim().startsWith('<html')) {
-                    throw new Error("Received an HTML error page instead of a 3D model. The file path might be wrong.");
-                }
+                if (objText.trim().startsWith('<!DOCTYPE') || objText.trim().startsWith('<html')) throw new Error("Received an HTML error page instead of a 3D model. The file path might be wrong.");
 
                 const obj = new OBJLoader().parse(objText);
-                
                 if (currentModel) scene.remove(currentModel); surfaceListUI.innerHTML = ''; let surfaceIndex = 1;
                 
                 const useHeatmap = heatmapToggle.checked; const alpha = parseInt(meshAlpha.value) / 100;
@@ -559,9 +598,7 @@
                 console.log("[SYSTEM] Model loaded successfully.");
 
             } catch (err) {
-                console.error("3D Viewer Error:", err);
-                setStatus("RENDER ERROR", "var(--error)", "transparent");
-                alert("Failed to load 3D view: " + err.message);
+                console.error("3D Viewer Error:", err); setStatus("RENDER ERROR", "var(--error)", "transparent"); alert("Failed to load 3D view: " + err.message);
             }
         };
 
@@ -587,27 +624,41 @@
         clipXToggle.onchange = updateMeshAppearance; clipYToggle.onchange = updateMeshAppearance; clipZToggle.onchange = updateMeshAppearance; 
         meshAlpha.oninput = updateMeshAppearance;
 
+        // --- GENERATE MESH (UPDATED) ---
         genMeshBtn.onclick = async () => {
             if (!stagedFile) return;
+            toggleMeshLock(true); // LOCK THE UI
+
             const formData = new FormData(); formData.append('cadFile', stagedFile); formData.append('density', meshDensitySlider.value);
 
-            genMeshBtn.disabled = true; genMeshBtn.style.opacity = "0.5"; genMeshBtn.innerHTML = `⚙️ Meshing...`;
+            genMeshBtn.innerHTML = `⚙️ Meshing...`;
             setStatus('PROCESSING', 'var(--warning)', 'transparent'); addLog(`[SYSTEM] Sent to parallel compute engine...`);
 
-            const evtSource = new EventSource('https://swostideep-mesh-stage-api.hf.space/api/progress');
-            evtSource.onmessage = function(event) { const data = JSON.parse(event.data); if (data.log) addLog(data.log); };
+            activeSSE = new EventSource('https://swostideep-mesh-stage-api.hf.space/api/progress');
+            activeSSE.onmessage = function(event) { 
+                const data = JSON.parse(event.data); 
+                if (data.log) {
+                    addLog(data.log); 
+                    if (data.log.includes("Job completed successfully")) {
+                        toggleMeshLock(false); // UNLOCK UI
+                        if (activeSSE) activeSSE.close();
+                    }
+                }
+            };
 
             try {
-                const token = localStorage.getItem('token');
                 const response = await fetch('https://swostideep-mesh-stage-api.hf.space/api/mesh', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
                 const result = await response.json();
                 if (result.success) {
                     setStatus('SYSTEM IDLE', 'var(--text-muted)', 'var(--header-bg)'); await fetchUserHistory(); 
                     const firstHistoryItem = document.querySelector('.history-item > div'); if (firstHistoryItem) firstHistoryItem.click();
                 }
-            } catch (err) {} finally {
-                evtSource.close(); genMeshBtn.disabled = false; genMeshBtn.style.opacity = "1";
-                genMeshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> <span>Generate Mesh</span>`;
+            } catch (err) {
+                addLog(`[ERROR] ${err.message}`);
+            } finally {
+                // Failsafe unlock in case the connection drops entirely
+                setTimeout(() => toggleMeshLock(false), 1500); 
+                if (activeSSE) activeSSE.close();
             }
         };
 
@@ -619,6 +670,7 @@
         }
         applyTheme();
         themeToggleBtn.onclick = () => { isDarkMode = !isDarkMode; localStorage.setItem('theme', isDarkMode ? 'dark' : 'light'); applyTheme(); };
+        
         // Load the username into the top right corner
         const savedName = localStorage.getItem('sm_username');
         if (savedName) document.getElementById('display-username').innerText = savedName;
