@@ -129,7 +129,7 @@
             errorDiv.style.display = 'none';
             submitBtn.textContent = "Processing...";
 
-            const endpoint = isLogin ? '/api/login' : '/api/register';
+            const endpoint = isLogin ? 'https://swostideep-mesh-stage-api.hf.space/api/login' : 'https://swostideep-mesh-stage-api.hf.space/api/register';
 
             try {
                 const response = await fetch(endpoint, {
@@ -165,7 +165,7 @@
             submitBtn.textContent = "Authenticating with Google...";
             
             try {
-                const res = await fetch('/api/auth/google', {
+                const res = await fetch('https://swostideep-mesh-stage-api.hf.space/api/auth/google', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: response.credential })

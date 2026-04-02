@@ -424,7 +424,7 @@
         async function fetchUserHistory() {
             const token = localStorage.getItem('token'); if(!token) return;
             try {
-                const res = await fetch('/api/history', { headers: { 'Authorization': `Bearer ${token}` } });
+                const res = await fetch('https://swostideep-mesh-stage-api.hf.space/api/history', { headers: { 'Authorization': `Bearer ${token}` } });
                 const history = await res.json();
                 if(history && history.length > 0) {
                     historyList.innerHTML = history.map(item => `
@@ -449,7 +449,7 @@
 
         window.downloadMesh = async (jobId, filename) => {
             const token = localStorage.getItem('token'); const format = document.getElementById(`format_${jobId}`).value; 
-            const res = await fetch(`/api/download/${jobId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`https://swostideep-mesh-stage-api.hf.space/api/download/${jobId}`, { headers: { 'Authorization': `Bearer ${token}` } });
             if (res.ok) {
                 const blob = await res.blob(); const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a'); a.href = url; a.download = `SM_${filename.split('.')[0]}${format}`;
@@ -460,7 +460,7 @@
         window.deleteMesh = async (jobId) => {
             if(!confirm("Permanently delete this mesh and its data?")) return;
             const token = localStorage.getItem('token');
-            const res = await fetch(`/api/mesh/${jobId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`https://swostideep-mesh-stage-api.hf.space/api/mesh/${jobId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
             if(res.ok) { fetchUserHistory(); if (currentModel) { scene.remove(currentModel); currentModel = null; surfaceListUI.innerHTML = ''; } }
         };
 
@@ -504,7 +504,9 @@
 
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+                // The URL coming back from the database might be a relative path (/uploads/...), so we ensure it points to Hugging Face
+                const fullUrl = url.startsWith('/') ? `https://swostideep-mesh-stage-api.hf.space${url}` : url;
+                const response = await fetch(fullUrl, { headers: { 'Authorization': `Bearer ${token}` } });
                 const objText = await response.text(); const obj = new OBJLoader().parse(objText);
                 
                 if (currentModel) scene.remove(currentModel); surfaceListUI.innerHTML = ''; let surfaceIndex = 1;
@@ -573,12 +575,12 @@
             genMeshBtn.disabled = true; genMeshBtn.style.opacity = "0.5"; genMeshBtn.innerHTML = `⚙️ Meshing...`;
             setStatus('PROCESSING', 'var(--warning)', 'transparent'); addLog(`[SYSTEM] Sent to parallel compute engine...`);
 
-            const evtSource = new EventSource('/api/progress');
+            const evtSource = new EventSource('https://swostideep-mesh-stage-api.hf.space/api/progress');
             evtSource.onmessage = function(event) { const data = JSON.parse(event.data); if (data.log) addLog(data.log); };
 
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/mesh', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+                const response = await fetch('https://swostideep-mesh-stage-api.hf.space/api/mesh', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
                 const result = await response.json();
                 if (result.success) {
                     setStatus('SYSTEM IDLE', 'var(--text-muted)', 'var(--header-bg)'); await fetchUserHistory(); 
