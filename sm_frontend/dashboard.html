@@ -505,7 +505,7 @@
             try {
                 const token = localStorage.getItem('token');
                 // The URL coming back from the database might be a relative path (/uploads/...), so we ensure it points to Hugging Face
-                const fullUrl = url.startsWith('/') ? `https://swostideep-mesh-stage-api.hf.space${url}` : url;
+                const fullUrl = url.startsWith('http') ? url : `https://swostideep-mesh-stage-api.hf.space/${url.replace(/^\//, '')}`;
                 const response = await fetch(fullUrl, { headers: { 'Authorization': `Bearer ${token}` } });
                 const objText = await response.text(); const obj = new OBJLoader().parse(objText);
                 
