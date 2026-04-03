@@ -3,6 +3,8 @@
 #include <cmath>
 #include <fstream>
 #include <map>
+#include <unordered_map>
+#include <cstdint>
 #include <string>
 #include <future> 
 #include <thread>
@@ -37,22 +39,52 @@
 
 using namespace std;
 
-struct PointCompare {
-    bool operator()(const gp_Pnt& p1, const gp_Pnt& p2) const {
-        double tol = 1e-2; 
-        if (abs(p1.X() - p2.X()) > tol) return p1.X() < p2.X();
-        if (abs(p1.Y() - p2.Y()) > tol) return p1.Y() < p2.Y();
-        if (abs(p1.Z() - p2.Z()) > tol) return p1.Z() < p2.Z();
-        return false;
+// FIX #11: PointCompare with tolerance bands violates std::map's strict-weak-ordering
+// requirement: A < B and B < A can both be false for A != B, causing silent map corruption
+// (undefined behaviour). Solution: snap each coordinate to a coarse grid first, then
+// compare exactly. The grid size matches the original 1e-2 merge tolerance.
+static constexpr double SNAP_TOL = 1e-2;
+
+struct SnapKey {
+    long long xi, yi, zi;
+    SnapKey(const gp_Pnt& p)
+        : xi(static_cast<long long>(std::round(p.X() / SNAP_TOL))),
+          yi(static_cast<long long>(std::round(p.Y() / SNAP_TOL))),
+          zi(static_cast<long long>(std::round(p.Z() / SNAP_TOL))) {}
+    bool operator==(const SnapKey& o) const { return xi==o.xi && yi==o.yi && zi==o.zi; }
+    bool operator<(const SnapKey& o)  const {
+        if (xi != o.xi) return xi < o.xi;
+        if (yi != o.yi) return yi < o.yi;
+        return zi < o.zi;
     }
 };
 
-int getGlobalVertex(gp_Pnt p, map<gp_Pnt, int, PointCompare>& globalNodes, vector<gp_Pnt>& uniqueNodes) {
-    auto it = globalNodes.find(p);
+struct SnapKeyHash {
+    size_t operator()(const SnapKey& k) const noexcept {
+        size_t h = static_cast<size_t>(k.xi);
+        h ^= static_cast<size_t>(k.yi) * 2654435761ULL + 0x9e3779b9ULL + (h<<6) + (h>>2);
+        h ^= static_cast<size_t>(k.zi) * 2246822519ULL + 0x9e3779b9ULL + (h<<6) + (h>>2);
+        return h;
+    }
+};
+
+// GlobalNodeMap — snap-keyed hash map for O(1) 3D vertex deduplication.
+// Using SnapKey instead of a tolerance-band comparator ensures the map satisfies
+// strict-weak-ordering (a requirement std::map enforces with UB if violated).
+using GlobalNodeMap = unordered_map<SnapKey, int, SnapKeyHash>;
+
+// registerOrFindGlobalVertex
+// Looks up a 3D point p in the global node registry. If found, returns its existing
+// index. If not found, appends it to uniqueNodes, records it in globalNodes, and
+// returns the new index. Deduplication uses SnapKey (grid snap to 1e-2) so nearby
+// points on shared CAD edges are merged into a single shared node.
+int registerOrFindGlobalVertex(const gp_Pnt& p, GlobalNodeMap& globalNodes, vector<gp_Pnt>& uniqueNodes) {
+    SnapKey key(p);
+    auto it = globalNodes.find(key);
     if (it != globalNodes.end()) return it->second;
-    int idx = uniqueNodes.size();
+    int idx = (int)uniqueNodes.size();
     uniqueNodes.push_back(p);
-    globalNodes[p] = idx;
+    globalNodes[key] = idx;
     return idx;
 }
 
@@ -62,10 +94,19 @@ struct FaceMeshResult {
     vector<vector<int>> localTriangles;
 };
 
-double get3DTriangleSkewness(gp_Pnt a, gp_Pnt b, gp_Pnt c) {
-    double L1 = b.Distance(c); double L2 = a.Distance(c); double L3 = a.Distance(b); 
-    double angleA = acos((L2*L2 + L3*L3 - L1*L1) / (2.0 * L2 * L3)) * (180.0 / M_PI);
-    double angleB = acos((L1*L1 + L3*L3 - L2*L2) / (2.0 * L1 * L3)) * (180.0 / M_PI);
+// compute3DSkewness
+// Computes ANSYS NES skewness for a triangle defined by three 3D points (gp_Pnt).
+// Uses the same formula as computeNESSkewness in voronoi_core but operates on
+// 3D Euclidean distances rather than 2D integer-grid coordinates.
+// acos arguments are clamped to [-1,1] to prevent NaN on near-degenerate triangles.
+double compute3DSkewness(gp_Pnt a, gp_Pnt b, gp_Pnt c) {
+    double L1 = b.Distance(c), L2 = a.Distance(c), L3 = a.Distance(b);
+    auto safeCos = [](double num, double den) -> double {
+        if (den < 1e-12) return 0.0;
+        return std::max(-1.0, std::min(1.0, num / den));
+    };
+    double angleA = std::acos(safeCos(L2*L2 + L3*L3 - L1*L1, 2.0*L2*L3)) * (180.0 / M_PI);
+    double angleB = std::acos(safeCos(L1*L1 + L3*L3 - L2*L2, 2.0*L1*L3)) * (180.0 / M_PI);
     double angleC = 180.0 - angleA - angleB;
     double minAngle = std::min({angleA, angleB, angleC});
     double maxAngle = std::max({angleA, angleB, angleC});
@@ -74,7 +115,14 @@ double get3DTriangleSkewness(gp_Pnt a, gp_Pnt b, gp_Pnt c) {
     return std::max(maxSkew, minSkew);
 }
 
-double getLocalMeshSize(Handle(Geom_Surface) surf, double u, double v, double baseSize) {
+// computeCurvatureAdaptiveSize
+// Queries OpenCASCADE surface curvature at parameter (u, v) and returns a target
+// edge length scaled inversely with curvature magnitude:
+//   targetSize = baseSize / (1 + alpha * curvature)
+// The result is clamped to a minimum of 15% of baseSize so highly curved regions
+// don't produce infinitesimally small triangles. Falls back to baseSize when
+// curvature is undefined (planar or degenerate surface patches).
+double computeCurvatureAdaptiveSize(Handle(Geom_Surface) surf, double u, double v, double baseSize) {
     GeomLProp_SLProps props(surf, u, v, 2, 1e-4);
     if (!props.IsCurvatureDefined()) return baseSize; 
     double k1 = props.MaxCurvature(); double k2 = props.MinCurvature();
@@ -85,9 +133,21 @@ double getLocalMeshSize(Handle(Geom_Surface) surf, double u, double v, double ba
     return std::max(targetSize, minSize); 
 }
 
-FaceMeshResult processFace(TopoDS_Face face, double meshDensity, 
-                           const TopTools_IndexedMapOfShape& edgeMap, 
-                           const vector<vector<double>>& globalEdgeSeeds) {
+// meshSingleFace
+// Triangulates one CAD face and returns a FaceMeshResult containing:
+//   localNodes     — 3D positions of all mesh vertices on this face
+//   localTriangles — index triples referencing localNodes
+// Pipeline:
+//   1. Samples the face boundary edges using pre-computed globalEdgeSeeds parameters.
+//   2. Scales UV coordinates to integer space [0, 2000] and deduplicates with a
+//      hash map (O(1) per point).
+//   3. Calls buildConstrainedDelaunayMesh with a curvature-adaptive sizing callback.
+//   4. Filters exterior triangles using BRepClass_FaceClassifier.
+//   5. Maps 2D UV triangles back to 3D via Geom_Surface::Value.
+// Thread-safe: reads edgeMap and globalEdgeSeeds by const-ref, all output is local.
+FaceMeshResult meshSingleFace(TopoDS_Face face, double meshDensity,
+                              const TopTools_IndexedMapOfShape& edgeMap,
+                              const vector<vector<double>>& globalEdgeSeeds) {
     FaceMeshResult result;
     Standard_Real uMin, uMax, vMin, vMax;
     BRepTools::UVBounds(face, uMin, uMax, vMin, vMax);
@@ -95,6 +155,8 @@ FaceMeshResult processFace(TopoDS_Face face, double meshDensity,
 
     vector<vector<int>> inputPoints;
     vector<pair<int, int>> boundarySegments;
+    // FIX #12: hash map for O(1) UV point deduplication (keyed on packed uint64 UV)
+    unordered_map<uint64_t, int> uvIndexMap;
     TopExp_Explorer edgeExplorer(face, TopAbs_EDGE);
 
     while (edgeExplorer.More()) {
@@ -115,12 +177,23 @@ FaceMeshResult processFace(TopoDS_Face face, double meshDensity,
                 gp_Pnt2d p2d = curve2d->Value(t);
                 int scaledU = (int)((p2d.X() - uMin) / uRange * 2000.0);
                 int scaledV = (int)((p2d.Y() - vMin) / vRange * 2000.0);
-                
+                // Clamp to [0, 2000] to avoid out-of-range keys
+                scaledU = std::max(0, std::min(2000, scaledU));
+                scaledV = std::max(0, std::min(2000, scaledV));
+
+                // FIX #12: O(1) hash lookup instead of O(n) linear scan.
+                // Pack (u, v) into a single 64-bit key; both fit in 16 bits (0..2000).
+                uint64_t uvKey = (static_cast<uint64_t>(scaledU) << 16) |
+                                  static_cast<uint64_t>(scaledV);
                 int currIdx = -1;
-                for(int j=0; j<(int)inputPoints.size(); j++) {
-                    if(abs(inputPoints[j][0]-scaledU) < 2 && abs(inputPoints[j][1]-scaledV) < 2) { currIdx = j; break; }
+                auto hit = uvIndexMap.find(uvKey);
+                if (hit != uvIndexMap.end()) {
+                    currIdx = hit->second;
+                } else {
+                    currIdx = (int)inputPoints.size();
+                    inputPoints.push_back({scaledU, scaledV});
+                    uvIndexMap[uvKey] = currIdx;
                 }
-                if(currIdx == -1) { inputPoints.push_back({scaledU, scaledV}); currIdx = inputPoints.size() - 1; }
                 if (prevIdx != -1 && prevIdx != currIdx) boundarySegments.push_back({prevIdx, currIdx});
                 prevIdx = currIdx;
             }
@@ -134,14 +207,16 @@ FaceMeshResult processFace(TopoDS_Face face, double meshDensity,
         
         auto adaptiveSizing = [&](double normU, double normV) -> double {
             double actualU = uMin + (normU * uRange); double actualV = vMin + (normV * vRange);
-            double targetEdgeLength3D = getLocalMeshSize(surf, actualU, actualV, meshDensity);
+            double targetEdgeLength3D = computeCurvatureAdaptiveSize(surf, actualU, actualV, meshDensity);
             double maxRange = max(uRange, vRange);
-            double scaledEdge = (targetEdgeLength3D / maxRange) * 2000.0; 
-            return (scaledEdge * scaledEdge) * 0.5; 
+            double scaledEdge = (targetEdgeLength3D / maxRange) * 2000.0;
+            return (scaledEdge * scaledEdge) * 0.5;
         };
 
-        computeDelaunay(inputPoints, boundarySegments, triangles, pointsOut, adaptiveSizing);
-        BRepClass_FaceClassifier classifier; map<gp_Pnt, int, PointCompare> localMap; 
+        buildConstrainedDelaunayMesh(inputPoints, boundarySegments, triangles, pointsOut, adaptiveSizing);
+        BRepClass_FaceClassifier classifier;
+        // FIX #11 (local): Use snap-key hash map for local 3D vertex deduplication
+        unordered_map<SnapKey, int, SnapKeyHash> localMap;
 
         for (const auto& tri : triangles) {
             if (!tri.active || tri.isExterior) continue;
@@ -157,12 +232,13 @@ FaceMeshResult processFace(TopoDS_Face face, double meshDensity,
             for(int i=0; i<3; i++) {
                 double u_norm = pointsOut[tri.v[i]][0] / 2000.0; double v_norm = pointsOut[tri.v[i]][1] / 2000.0;
                 gp_Pnt p3d = surf->Value(uMin + u_norm * uRange, vMin + v_norm * vRange);
-                
-                auto it = localMap.find(p3d);
-                if(it != localMap.end()) { triIndices.push_back(it->second); } 
+
+                SnapKey sk(p3d);
+                auto it = localMap.find(sk);
+                if(it != localMap.end()) { triIndices.push_back(it->second); }
                 else {
-                    int localIdx = result.localNodes.size(); result.localNodes.push_back(p3d);
-                    localMap[p3d] = localIdx; triIndices.push_back(localIdx);
+                    int localIdx = (int)result.localNodes.size(); result.localNodes.push_back(p3d);
+                    localMap[sk] = localIdx; triIndices.push_back(localIdx);
                 }
             }
             result.localTriangles.push_back(triIndices);
@@ -231,7 +307,7 @@ int main(int argc, char* argv[]) {
     }
 
     cout << "\n[--- PHASE 3: SURFACE DISCRETIZATION ---]" << endl;
-    map<gp_Pnt, int, PointCompare> globalNodes;
+    GlobalNodeMap globalNodes;
     vector<gp_Pnt> uniqueNodes; map<int, vector<vector<int>>> masterTrianglesByFace;
 
     int batchSize = thread::hardware_concurrency(); if (batchSize < 4) batchSize = 4; 
@@ -242,7 +318,7 @@ int main(int argc, char* argv[]) {
         int currentBatchSize = min(batchSize, totalFaces - i);
         
         for (int j = 0; j < currentBatchSize; j++) {
-            futures.push_back(async(launch::async, processFace, allFaces[i + j], meshDensity, ref(edgeMap), ref(globalEdgeSeeds)));
+            futures.push_back(async(launch::async, meshSingleFace, allFaces[i + j], meshDensity, ref(edgeMap), ref(globalEdgeSeeds)));
         }
 
         for (auto& f : futures) {
@@ -250,7 +326,7 @@ int main(int argc, char* argv[]) {
             cout << "> Processing Face " << facesProcessed << " of " << totalFaces << " (" << facesLeft << " pending)..." << endl;
             if (res.success) {
                 vector<int> localToGlobalMap;
-                for (const auto& p : res.localNodes) { localToGlobalMap.push_back(getGlobalVertex(p, globalNodes, uniqueNodes)); }
+                for (const auto& p : res.localNodes) { localToGlobalMap.push_back(registerOrFindGlobalVertex(p, globalNodes, uniqueNodes)); }
                 for (const auto& tri : res.localTriangles) { masterTrianglesByFace[facesProcessed].push_back({localToGlobalMap[tri[0]], localToGlobalMap[tri[1]], localToGlobalMap[tri[2]]}); }
             }
         }
@@ -263,7 +339,7 @@ int main(int argc, char* argv[]) {
     for(const auto& facePair : masterTrianglesByFace) {
         for(const auto& t : facePair.second) {
             totalTriangles++;
-            double skew = get3DTriangleSkewness(uniqueNodes[t[0]], uniqueNodes[t[1]], uniqueNodes[t[2]]);
+            double skew = compute3DSkewness(uniqueNodes[t[0]], uniqueNodes[t[1]], uniqueNodes[t[2]]);
             if (skew > globalMaxSkew) globalMaxSkew = skew;
             if (skew > 0.5) badElements++;
             for (int i=0; i<3; i++) { vertexSkew[t[i]] += skew; vertexTriCount[t[i]]++; }

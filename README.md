@@ -16,7 +16,7 @@ pinned: false
 **SM Surface Mesher** is a distributed, cloud-native engineering tool designed for high-fidelity surface triangulation of complex CAD models. By integrating the **OpenCASCADE (OCCT)** geometric kernel with a custom **C++ Voronoi-based engine**, the platform delivers simulation-ready meshes for FEA/CFD applications.
 
 1. **Deployed link:** [https://mesh-stage.vercel.app](https://mesh-stage.vercel.app)
-2. **vedio demo:** [Drive folder](https://drive.google.com/drive/folders/1E_aKMHZJt4NuOOFoAQCZ46bafijsn7zi?usp=drive_link)
+2. **video demo:** [Drive folder](https://drive.google.com/drive/folders/1E_aKMHZJt4NuOOFoAQCZ46bafijsn7zi?usp=drive_link)
 ---
 
 ## 🏗 System Architecture
