@@ -1,0 +1,34 @@
+# Editors
+.vscode/
+.idea/
+
+# Node
+node_modules/
+npm-debug.log*
+.env
+.env.*
+!.env.example
+
+# CAD input and generated meshes never belong in version control
+sm_backend/uploads/
+*.obj
+*.step
+*.stp
+*.iges
+*.igs
+
+# C++ / CMake build output
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+*.o
+*.a
+*.out
+sm_backend/engine/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
