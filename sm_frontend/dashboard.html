@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SM Surface Mesher - Workspace</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+        /* --- NEUTRAL & CYAN COLOR PALETTE --- */
+        :root {
+            --bg-main: #f4f4f5; /* Light Neutral Grey */
+            --bg-panel: #ffffff;
+            --border: #e4e4e7;
+            --text-main: #18181b;
+            --text-muted: #71717a;
+            --accent: #0ea5e9; /* Cyan Blue */
+            --accent-hover: #0284c7;
+            --header-bg: #fafafa;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        [data-theme='dark'] {
+            --bg-main: #000000; /* Pure Black */
+            --bg-panel: #121212; /* Deep Neutral Grey */
+            --border: #27272a;
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --accent: #38bdf8; /* Bright Cyan Blue for Dark Mode */
+            --header-bg: #09090b;
+        }
+
+        body { margin: 0; padding: 0; overflow: hidden; background: var(--bg-main); font-family: 'Inter', -apple-system, sans-serif; color: var(--text-main); }
+        #workbench { display: flex; flex-direction: column; height: 100vh; width: 100vw; min-width: 1100px; overflow-x: auto; }
+
+        /* Sleek Scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* --- UI COMPONENTS --- */
+        .resizer-x { width: 4px; background: transparent; cursor: col-resize; transition: background 0.2s; z-index: 100; flex-shrink: 0; }
+        .resizer-x:hover, .resizer-x.active { background: var(--accent); }
+        .resizer-y { height: 4px; background: transparent; cursor: row-resize; transition: background 0.2s; z-index: 100; flex-shrink: 0; }
+        .resizer-y:hover, .resizer-y.active { background: var(--accent); }
+
+        .layout-btn { padding: 6px; color: var(--text-muted); border-radius: 4px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; background: transparent; display: flex; align-items: center; justify-content: center; }
+        .layout-btn:hover { background: var(--border); color: var(--text-main); }
+        .layout-btn.active { color: var(--accent); background: rgba(14, 165, 233, 0.1); }
+
+        .diagnostic-card {
+            position: absolute; top: 16px; left: 16px; background: var(--bg-panel); opacity: 0.95;
+            backdrop-filter: blur(8px); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border); 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 160px; z-index: 10; transition: background 0.3s, border-color 0.3s;
+        }
+        .diagnostic-header { font-size: 9px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+        .diagnostic-card .metric-row { font-size: 10px; padding: 2px 0; display: flex; justify-content: space-between; }
+        .diagnostic-card .metric-val { font-size: 11px; font-weight: 600; }
+
+        /* Drop Zone UI */
+        .drop-zone {
+            border: 2px dashed var(--border); border-radius: 6px; padding: 20px 16px; text-align: center;
+            background: var(--header-bg); transition: all 0.2s; cursor: pointer; margin-bottom: 16px;
+        }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(14, 165, 233, 0.05); }
+        .drop-zone-text { font-size: 12px; color: var(--text-muted); margin-top: 8px; font-weight: 500; }
+        .drop-zone-icon { color: var(--accent); }
+
+        /* Proximity Badges & Sliders */
+        .badge-btn {
+            background: rgba(14, 165, 233, 0.1); color: var(--accent); border: none; padding: 3px 8px;
+            border-radius: 12px; font-size: 10px; font-weight: 700; cursor: pointer; transition: all 0.2s;
+        }
+        .badge-btn:hover { background: var(--accent); color: white; }
+
+        input[type=range] { -webkit-appearance: none; background: transparent; width: 100%; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: var(--border); border-radius: 2px; }
+
+        /* Restored Original Logo Style */
+        .sm-logo { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; }
+        
+        /* Panel Sections */
+        .panel-header { padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; background: var(--header-bg); border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); }
+        .panel-content { padding: 16px; }
+
+        .tree-container { flex: 1; padding: 6px; overflow-y: auto; overflow-x: hidden; background: var(--bg-panel); min-height: 0; }
+        .tree-item { padding: 6px 10px; border-radius: 4px; transition: all 0.15s; border: 1px solid var(--border); background: var(--bg-panel); margin-bottom: 4px; }
+        .tree-item:hover { border-color: var(--accent); }
+        .tree-label { display: flex; align-items: center; gap: 8px; width: 100%; cursor: pointer; font-size: 11px; font-weight: 500; color: var(--text-main); margin: 0; }
+        .tree-checkbox { accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
+        .tree-icon { color: var(--text-muted); flex-shrink: 0; }
+
+        /* Segmented control for switching between the source CAD tessellation
+           and the generated mesh. Uses the existing panel tokens so it reads
+           as part of the toolbar rather than an addition to it. */
+        .view-switch { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        .view-btn {
+            flex: 1; padding: 6px 0; font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+            background: var(--bg-panel); color: var(--text-muted); border: none; cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .view-btn + .view-btn { border-left: 1px solid var(--border); }
+        .view-btn:hover:not(:disabled) { background: var(--header-bg); color: var(--text-main); }
+        .view-btn.active { background: var(--accent); color: #ffffff; }
+        .view-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(16px); }
+    </style>
+</head>
+<body> 
+    <div id="workbench">
+        <div class="toolbar" style="border-bottom: 1px solid var(--border); background: var(--bg-panel); padding: 2px 16px; display: flex; align-items: center;">
+            <div class="brand" style="display: flex; align-items: center; gap: 8px; margin-right: 24px;">
+                <div class="sm-logo">
+                    <span style="color: var(--text-main);">S</span><span style="color: var(--accent);">M</span>
+                </div>
+                <span class="brand-text" style="font-weight: 700; font-size: 13px; letter-spacing: 1px; color: var(--text-main);">SURFACE MESHER</span>
+            </div>
+            
+            <button class="tool-btn primary" id="genMeshBtn" disabled style="opacity: 0.5; cursor: not-allowed; padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: 4px; border: none; background: var(--accent); color: white; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span>Generate Mesh</span>
+            </button>
+            <button class="tool-btn" id="stopMeshBtn" style="display: none; padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: 4px; border: none; background: var(--error); color: white; align-items: center; gap: 6px; cursor: pointer;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                <span>Stop Meshing</span>
+            </button>
+
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+                
+                <button id="resetViewBtn" class="tool-btn" style="border: 1px solid var(--border); background: var(--bg-panel); color: var(--text-main); padding: 6px 12px; font-size: 11px; font-weight: 600; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                    Reset View
+                </button>
+
+                <div style="width: 1px; height: 24px; background: var(--border);"></div>
+
+                <div style="display: flex; gap: 4px;">
+                    <button class="layout-btn active" id="toggleLeftBtn" title="Toggle Left Sidebar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M9 3v18"></path></svg>
+                    </button>
+                    <button class="layout-btn active" id="toggleBottomBtn" title="Toggle Bottom Panel">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M3 15h18"></path></svg>
+                    </button>
+                    <button class="layout-btn active" id="toggleRightBtn" title="Toggle Right Sidebar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M15 3v18"></path></svg>
+                    </button>
+                </div>
+
+                <div style="width: 1px; height: 24px; background: var(--border);"></div>
+
+                <button class="tool-btn" id="themeToggleBtn" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px;">
+                    <span id="theme-icon">☀️</span>
+                </button>
+
+                <span id="status-bar" style="font-weight: 700; color: var(--text-muted); font-size: 9px; letter-spacing: 0.5px; background: var(--header-bg); padding: 4px 8px; border-radius: 12px; border: 1px solid var(--border);">SYSTEM IDLE</span>
+                <span style="font-weight: 700; color: var(--accent); font-size: 11px; margin-left: 8px;" id="display-username"></span>
+                <button id="logoutBtn" style="border:none; color: var(--error); background: transparent; font-weight: 700; cursor: pointer; font-size: 12px;">Logout</button>
+            </div>
+        </div>
+
+        <div class="app-core" style="display: flex; flex: 1; overflow: hidden;">
+            
+            <div id="panel-left" class="sidebar" style="width: 280px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-panel); overflow-y: auto;">
+                
+                <div style="padding: 16px;">
+                    <div id="dropZone" class="drop-zone">
+                        <svg class="drop-zone-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                        <div class="drop-zone-text" id="dropZoneText">Drag & Drop CAD file<br><span style="font-size: 10px;">or click to browse (.step, .iges)</span></div>
+                        <input type="file" id="fileInput" accept=".step,.stp,.iges,.igs" style="display: none;" />
+                    </div>
+                </div>
+
+                <div class="panel-header" style="border-top: none;">Meshing Resolution</div>
+                <div class="panel-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-size: 12px; font-weight: 600;">Target Density</span>
+                        <button id="ansysGradeBtn" class="badge-btn" title="Set to Industry Standard"> Auto: CAE Standard</button>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                        <span style="font-size: 14px; font-weight: 800; color: var(--accent);" id="densityDisplay">0.05</span>
+                    </div>
+                    <input type="range" id="meshDensitySlider" min="0.01" max="0.30" step="0.01" value="0.05">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; margin-top: 6px;">
+                        <span>Fine (High Res)</span>
+                        <span>Coarse (Fast)</span>
+                    </div>
+                </div>
+
+                <div class="panel-header">Display Controls</div>
+                <div class="panel-content">
+                    <div style="margin-bottom: 16px;">
+                        <span style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 8px;">Display Mode</span>
+                        <div class="view-switch" id="viewSwitch">
+                            <button type="button" class="view-btn" id="viewGeometryBtn" disabled>Geometry</button>
+                            <button type="button" class="view-btn active" id="viewMeshBtn" disabled>Mesh</button>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <span style="font-size: 12px; font-weight: 600;">FEA Quality Heatmap</span>
+                        <label class="switch"><input type="checkbox" id="heatmapToggle" checked><span class="slider"></span></label>
+                    </div>
+
+                    <div style="margin-bottom: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+                        <span style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 8px;">Cross-Section Planes</span>
+                        <div style="display: flex; gap: 12px;">
+                            <label style="font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="clipXToggle"> X</label>
+                            <label style="font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="clipYToggle"> Y</label>
+                            <label style="font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="clipZToggle"> Z</label>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-bottom: 6px;">
+                            <span>Transparency</span>
+                            <span id="alphaVal">100%</span>
+                        </div>
+                        <input type="range" id="meshAlpha" min="10" max="100" value="100">
+                    </div>
+
+                    <div style="display: flex; gap: 12px;">
+                        <div style="flex: 1;">
+                            <span style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Surface Color</span>
+                            <input type="color" id="meshColor" value="#ffffff" disabled style="width: 100%; height: 28px; border: 1px solid var(--border); border-radius: 4px; opacity: 0.3; cursor: not-allowed; padding: 0;">
+                        </div>
+                        <div style="flex: 1;">
+                            <span style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px;">Grid Color</span>
+                            <input type="color" id="lineColor" value="#000000" style="width: 100%; height: 28px; border: 1px solid var(--border); border-radius: 4px; padding: 0; cursor: pointer;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-header">Project History</div>
+                <div id="history-list" style="padding: 0; overflow-y: auto; flex: 1; min-height: 200px;">
+                    <div style="padding:24px; color:var(--text-muted); font-size:12px; text-align:center;">No recent meshes found.</div>
+                </div>
+            </div>
+
+            <div class="resizer-x" id="drag-left"></div>
+
+            <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                
+                <div style="display: flex; flex: 1; min-height: 0;">
+                    
+                    <div class="viewport-container" style="flex: 1; position: relative; min-width: 0; background: var(--bg-main);">
+                        <div id="viewer"></div>
+                        <div class="diagnostic-card">
+                            <div class="diagnostic-header">Diagnostic Report</div>
+                            <div class="metric-row"><span>Nodes</span> <span class="metric-val" id="stat-nodes">--</span></div>
+                            <div class="metric-row"><span>Elements</span> <span class="metric-val" id="stat-tri">--</span></div>
+                            <div class="metric-row"><span>Max Skew</span> <span class="metric-val" id="stat-skew">--</span></div>
+                            <div class="metric-row" style="border: none;"><span>Bad Elements</span> <span class="metric-val" id="stat-bad">--</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="resizer-x" id="drag-right"></div>
+
+                    <div id="panel-right" style="width: 240px; background: var(--bg-panel); display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; border-left: 1px solid var(--border);">
+                        
+                        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; border-top: none;">
+                            <span>Model Tree</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                        </div>
+                        
+                        <div style="padding: 10px 16px; background: var(--bg-panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                            <input type="checkbox" id="masterCheckbox" checked class="tree-checkbox">
+                            <label for="masterCheckbox" style="font-size: 12px; font-weight: 600; cursor: pointer; margin: 0; color: var(--text-main);">Select All Surfaces</label>
+                        </div>
+                        
+                        <div class="tree-container" style="background: var(--bg-main);">
+                            <div id="surface-list" style="display: flex; flex-direction: column;">
+                                <div style="color:var(--text-muted); font-size:11px; text-align:center; padding:24px 10px; font-style: italic;">No geometry loaded.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div> 
+
+                <div class="resizer-y" id="drag-bottom"></div>
+
+                <div id="panel-bottom" style="height: 200px; flex-shrink: 0; width: 100%; background: #000000; color: #38bdf8; font-family: monospace; font-size: 12px; display: flex; flex-direction: column;">
+                    <div style="padding: 6px 12px; background: #121212; color: #a1a1aa; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #27272a; border-top: 1px solid #27272a;">Engine Output Log</div>
+                    <div id="console-log" style="flex: 1; padding: 12px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;"></div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+        import { apiFetch, apiJson, eventStream, clearSession, getToken } from '/js/api.js';
+
+        if (!getToken()) { window.location.href = 'auth.html'; }
+
+        // DOM Elements
+        const logContainer = document.getElementById('console-log');
+        const statusBar = document.getElementById('status-bar');
+        const historyList = document.getElementById('history-list');
+        const surfaceListUI = document.getElementById('surface-list');
+        const fileInput = document.getElementById('fileInput');
+        const genMeshBtn = document.getElementById('genMeshBtn');
+        const heatmapToggle = document.getElementById('heatmapToggle');
+        
+        const clipXToggle = document.getElementById('clipXToggle');
+        const clipYToggle = document.getElementById('clipYToggle');
+        const clipZToggle = document.getElementById('clipZToggle');
+
+        const meshAlpha = document.getElementById('meshAlpha');
+        const meshColor = document.getElementById('meshColor');
+        const lineColor = document.getElementById('lineColor');
+        const resetViewBtn = document.getElementById('resetViewBtn');
+        
+        const meshDensitySlider = document.getElementById('meshDensitySlider');
+        const densityDisplay = document.getElementById('densityDisplay');
+        const ansysGradeBtn = document.getElementById('ansysGradeBtn');
+        
+        const dropZone = document.getElementById('dropZone');
+        const dropZoneText = document.getElementById('dropZoneText');
+        const stopMeshBtn = document.getElementById('stopMeshBtn');
+        const dropZoneArea = document.getElementById('dropZone');
+        
+        // --- MESH SESSION STATE ---
+        let stagedFile = null;
+        let currentModel = null;
+        let activeSSE = null;
+        let activeJobId = null;   // job currently being meshed
+        let loadedJob = null;     // job whose result is on screen
+        let viewMode = 'mesh';    // 'mesh' or 'geometry'
+
+        // --- DRAG & DROP LOGIC ---
+        dropZone.onclick = () => fileInput.click();
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFileSelect(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.onchange = () => { 
+            if(fileInput.files.length) handleFileSelect(fileInput.files[0]);
+        };
+
+        function handleFileSelect(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if(!['step', 'stp', 'iges', 'igs'].includes(ext)) {
+                alert("Only .step and .iges files are supported."); return;
+            }
+            stagedFile = file;
+            dropZoneText.innerHTML = `<span style="color:var(--accent); font-weight:700;">File Ready:</span><br>${file.name}`;
+            genMeshBtn.disabled = false; genMeshBtn.style.opacity = "1"; genMeshBtn.style.cursor = "pointer";
+            addLog(`[SYSTEM] Staged file: ${file.name}. Ready to generate.`);
+        }
+
+        // --- UI LOCK/UNLOCK MECHANISM ---
+        function toggleMeshLock(isMeshing) {
+            if (isMeshing) {
+                genMeshBtn.style.display = 'none';
+                stopMeshBtn.style.display = 'flex';
+                dropZoneArea.style.pointerEvents = 'none'; 
+                dropZoneArea.style.opacity = '0.5';
+            } else {
+                genMeshBtn.style.display = 'flex';
+                stopMeshBtn.style.display = 'none';
+                dropZoneArea.style.pointerEvents = 'all';
+                dropZoneArea.style.opacity = '1';
+                genMeshBtn.disabled = false;
+                genMeshBtn.style.opacity = "1";
+                genMeshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>Generate Mesh</span>`;
+            }
+        }
+
+        // --- STOP MESHING LOGIC ---
+        stopMeshBtn.onclick = async () => {
+            if (!activeJobId) return;
+            if (!confirm("Stop the current meshing engine? This will terminate the server process.")) return;
+            try {
+                // Scoped to this job: the endpoint verifies ownership, so it
+                // can no longer terminate whatever happened to be running.
+                await apiFetch(`/api/jobs/${activeJobId}/cancel`, { method: 'POST' });
+                if (activeSSE) { activeSSE.close(); activeSSE = null; }
+                toggleMeshLock(false);
+                setStatus("PROCESS TERMINATED", "var(--error)");
+                addLog("\n[USER] Emergency stop triggered. Engine process killed.");
+            } catch (err) {
+                addLog(`[ERROR] Stop failed: ${err.message}`);
+            }
+        };
+
+        // --- GEOMETRY / MESH VIEW TOGGLE ---
+        const viewGeometryBtn = document.getElementById('viewGeometryBtn');
+        const viewMeshBtn = document.getElementById('viewMeshBtn');
+
+        function setViewButtons(job) {
+            const hasMesh = Boolean(job && job.meshUrl);
+            const hasGeometry = Boolean(job && job.geometryUrl);
+            viewMeshBtn.disabled = !hasMesh;
+            viewGeometryBtn.disabled = !hasGeometry;
+            viewMeshBtn.classList.toggle('active', viewMode === 'mesh' && hasMesh);
+            viewGeometryBtn.classList.toggle('active', viewMode === 'geometry' && hasGeometry);
+        }
+
+        async function switchView(mode) {
+            if (!loadedJob || mode === viewMode) return;
+            viewMode = mode;
+            setViewButtons(loadedJob);
+            await loadJobModel(loadedJob, mode);
+        }
+
+        viewGeometryBtn.onclick = () => switchView('geometry');
+        viewMeshBtn.onclick = () => switchView('mesh');
+
+        // --- UI BINDINGS ---
+        meshDensitySlider.oninput = (e) => { densityDisplay.innerText = e.target.value; };
+        
+        ansysGradeBtn.onclick = () => {
+            meshDensitySlider.value = 0.05;
+            densityDisplay.innerText = "0.05";
+            addLog("[SYSTEM] Density Auto-Set to Ansys Industry Grade (0.05).");
+        };
+
+        resetViewBtn.onclick = () => {
+            heatmapToggle.checked = true;
+            clipXToggle.checked = false; clipYToggle.checked = false; clipZToggle.checked = false;
+            meshAlpha.value = 100; lineColor.value = "#000000";
+            updateMeshAppearance();
+            if (controls) controls.reset(); 
+            addLog(`[SYSTEM] View Reset to default orientation and display.`);
+        };
+
+        function addLog(text) {
+            const div = document.createElement('div'); div.innerText = text;
+            logContainer.appendChild(div); logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function setStatus(text, color) {
+            statusBar.innerText = text; statusBar.style.color = color; statusBar.style.borderColor = color;
+        }
+
+        // --- LAYOUT DRAG & DROP LOGIC ---
+        function makeResizable(resizerId, panelId, isHorizontal, reverse) {
+            const resizer = document.getElementById(resizerId);
+            const panel = document.getElementById(panelId);
+            let startPos, startSize;
+
+            resizer.onmousedown = (e) => {
+                e.preventDefault();
+                startPos = isHorizontal ? e.clientX : e.clientY;
+                startSize = isHorizontal ? panel.offsetWidth : panel.offsetHeight;
+                document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize';
+                resizer.classList.add('active');
+
+                document.onmousemove = (e) => {
+                    let delta = (isHorizontal ? e.clientX : e.clientY) - startPos;
+                    if (reverse) delta = -delta; 
+                    let newSize = startSize + delta;
+                    if (newSize > 50) { 
+                        if (isHorizontal) { panel.style.width = newSize + 'px'; panel.style.minWidth = newSize + 'px'; } 
+                        else { panel.style.height = newSize + 'px'; panel.style.minHeight = newSize + 'px'; }
+                        window.dispatchEvent(new Event('resize')); 
+                    }
+                };
+
+                document.onmouseup = () => {
+                    document.body.style.cursor = 'default'; resizer.classList.remove('active');
+                    document.onmousemove = null; document.onmouseup = null;
+                };
+            };
+        }
+
+        makeResizable('drag-left', 'panel-left', true, false);
+        makeResizable('drag-right', 'panel-right', true, true);
+        makeResizable('drag-bottom', 'panel-bottom', false, true);
+
+        function setupToggle(btnId, panelId, resizerId) {
+            const btn = document.getElementById(btnId); const panel = document.getElementById(panelId); const resizer = document.getElementById(resizerId);
+            btn.addEventListener('click', () => {
+                if (panel.style.display !== 'none') { panel.style.display = 'none'; if(resizer) resizer.style.display = 'none'; btn.classList.remove('active'); } 
+                else { panel.style.display = 'flex'; if(resizer) resizer.style.display = 'block'; btn.classList.add('active'); }
+                window.dispatchEvent(new Event('resize'));
+            });
+        }
+        setupToggle('toggleLeftBtn', 'panel-left', 'drag-left'); 
+        setupToggle('toggleRightBtn', 'panel-right', 'drag-right'); 
+        setupToggle('toggleBottomBtn', 'panel-bottom', 'drag-bottom');
+
+        // --- HISTORY & EXPORT ---
+        async function fetchUserHistory() {
+            try {
+                const { jobs } = await apiJson('/api/jobs?limit=20');
+                if (!jobs || jobs.length === 0) {
+                    historyList.innerHTML = '<div style="padding:24px; color:var(--text-muted); font-size:12px; text-align:center;">No recent meshes found.</div>';
+                    return;
+                }
+                historyList.innerHTML = jobs.map(job => {
+                    const done = job.status === 'completed';
+                    const label = done
+                        ? `${job.triangles} Elements | ${new Date(job.createdAt).toLocaleDateString()}`
+                        : `${job.status.toUpperCase()} | ${new Date(job.createdAt).toLocaleDateString()}`;
+                    return `
+                        <div class="history-item" style="padding: 12px 16px; border-bottom: 1px solid var(--border);">
+                            <div data-open="${job.id}" style="cursor: ${done ? 'pointer' : 'default'}; margin-bottom: 10px;">
+                                <div style="font-weight: 600; font-size: 13px; color: var(--text-main);">${job.originalFilename}</div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${label}</div>
+                            </div>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <button data-export="${job.id}" ${done ? '' : 'disabled'} style="flex: 1; background:var(--header-bg); border:1px solid var(--border); padding:4px 0; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; color:var(--text-main); opacity:${done ? 1 : 0.4};">&#8595; Export</button>
+                                <button data-delete="${job.id}" style="background:transparent; border:1px solid var(--error); padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; color:var(--error);">&#128465;</button>
+                            </div>
+                        </div>`;
+                }).join('');
+
+                // Delegated handlers. The rows used to carry inline onclick
+                // attributes that interpolated server values straight into
+                // markup, which breaks on any filename containing a quote.
+                historyList.querySelectorAll('[data-open]').forEach(el => {
+                    el.onclick = () => openJob(el.dataset.open);
+                });
+                historyList.querySelectorAll('[data-export]').forEach(el => {
+                    el.onclick = () => exportJob(el.dataset.export);
+                });
+                historyList.querySelectorAll('[data-delete]').forEach(el => {
+                    el.onclick = () => deleteJob(el.dataset.delete);
+                });
+            } catch (err) {
+                addLog(`[ERROR] Could not load history: ${err.message}`);
+            }
+        }
+
+        async function exportJob(jobId) {
+            try {
+                const res = await apiFetch(`/api/jobs/${jobId}/mesh`);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `SM_mesh_${jobId}.obj`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                addLog(`[ERROR] Export failed: ${err.message}`);
+            }
+        }
+
+        async function deleteJob(jobId) {
+            if (!confirm('Permanently delete this mesh and its data?')) return;
+            try {
+                await apiFetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+                if (loadedJob && loadedJob.id === jobId) {
+                    if (currentModel) scene.remove(currentModel);
+                    currentModel = null;
+                    loadedJob = null;
+                    surfaceListUI.innerHTML = '';
+                    setViewButtons(null);
+                }
+                fetchUserHistory();
+            } catch (err) {
+                addLog(`[ERROR] Delete failed: ${err.message}`);
+            }
+        }
+
+        async function openJob(jobId) {
+            try {
+                const { job } = await apiJson(`/api/jobs/${jobId}`);
+                if (job.status !== 'completed') return;
+                showJob(job);
+            } catch (err) {
+                addLog(`[ERROR] ${err.message}`);
+            }
+        }
+
+        // --- 3D VIEWER & X,Y,Z CLIPPING ENGINE ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 20000); camera.position.set(250, 250, 250);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.localClippingEnabled = true; 
+        document.getElementById('viewer').appendChild(renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+        controls.saveState(); 
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5); dirLight.position.set(200, 400, 200); scene.add(dirLight);
+        scene.add(new THREE.AxesHelper(150));
+
+        const planeX = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+        const planeY = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
+        window.addEventListener('resize', () => {
+            const vDiv = document.getElementById('viewer'); if(vDiv.clientWidth === 0 || vDiv.clientHeight === 0) return;
+            camera.aspect = vDiv.clientWidth / vDiv.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(vDiv.clientWidth, vDiv.clientHeight);
+        });
+
+        const masterCheckbox = document.getElementById('masterCheckbox');
+        masterCheckbox.onchange = (e) => {
+            const isChecked = e.target.checked; if (!currentModel) return;
+            document.querySelectorAll('#surface-list .tree-checkbox').forEach(cb => { cb.checked = isChecked; });
+            currentModel.children.forEach(c => { c.visible = isChecked; });
+        };
+
+        function showJob(job) {
+            loadedJob = job;
+            document.getElementById('stat-tri').innerText = job.triangles ?? '--';
+            document.getElementById('stat-nodes').innerText = job.vertices ?? '--';
+            document.getElementById('stat-skew').innerText =
+                job.maxSkewness != null ? Number(job.maxSkewness).toFixed(4) : '--';
+            const badElem = document.getElementById('stat-bad');
+            badElem.innerText = job.highSkewCount ?? '--';
+            badElem.style.color = Number(job.highSkewCount) > 0 ? 'var(--error)' : 'var(--text-main)';
+
+            viewMode = 'mesh';
+            setViewButtons(job);
+            return loadJobModel(job, 'mesh');
+        }
+
+        // Loads either the generated mesh or the source CAD tessellation for
+        // the same job. Both come from the engine, so switching between them
+        // is a download, not a re-run.
+        async function loadJobModel(job, mode) {
+            const path = mode === 'geometry'
+                ? `/api/jobs/${job.id}/geometry`
+                : `/api/jobs/${job.id}/mesh`;
+
+            setStatus(mode === 'geometry' ? 'LOADING GEOMETRY...' : 'LOADING MESH...', 'var(--accent)');
+            try {
+                const res = await apiFetch(path);
+                const objText = await res.text();
+                const obj = new OBJLoader().parse(objText);
+
+                if (currentModel) scene.remove(currentModel);
+                surfaceListUI.innerHTML = '';
+                let surfaceIndex = 1;
+
+                // The source tessellation carries no per-vertex colour, so the
+                // heatmap only applies to the generated mesh.
+                const useHeatmap = heatmapToggle.checked && mode === 'mesh';
+                const alpha = parseInt(meshAlpha.value) / 100;
+                document.getElementById('masterCheckbox').checked = true;
+
+                const activePlanes = [];
+                if (clipXToggle.checked) activePlanes.push(planeX);
+                if (clipYToggle.checked) activePlanes.push(planeY);
+                if (clipZToggle.checked) activePlanes.push(planeZ);
+
+                obj.traverse((c) => {
+                    if (!c.isMesh) return;
+                    c.geometry = mergeVertices(c.geometry, 1e-4);
+                    c.geometry.computeVertexNormals();
+                    c.material = new THREE.MeshStandardMaterial({
+                        color: useHeatmap ? 0xffffff : (mode === 'geometry' ? 0x9aa4b2 : meshColor.value),
+                        vertexColors: useHeatmap,
+                        metalness: 0.15, roughness: 0.45, flatShading: false,
+                        transparent: alpha < 1.0, opacity: alpha, clippingPlanes: activePlanes,
+                        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+                        side: THREE.DoubleSide
+                    });
+
+                    // Wireframe is what makes a mesh readable; on the source
+                    // geometry it just obscures the surface, so it is omitted.
+                    if (mode === 'mesh') {
+                        const wireMat = new THREE.LineBasicMaterial({ color: lineColor.value, transparent: true, opacity: 0.2, clippingPlanes: activePlanes });
+                        c.add(new THREE.LineSegments(new THREE.WireframeGeometry(c.geometry), wireMat));
+                    }
+
+                    const surfaceName = (c.name && c.name !== '') ? c.name : `Surface_${surfaceIndex++}`;
+                    const row = document.createElement('div');
+                    row.className = 'tree-item';
+                    row.innerHTML = `<label class="tree-label"><input type="checkbox" checked class="tree-checkbox"><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg><span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span></label>`;
+                    row.querySelector('span').textContent = surfaceName;
+                    row.querySelector('input').onchange = (e) => { c.visible = e.target.checked; };
+                    surfaceListUI.appendChild(row);
+                });
+
+                const box = new THREE.Box3().setFromObject(obj);
+                const center = box.getCenter(new THREE.Vector3());
+                obj.position.sub(center);
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                const scale = 180 / maxDim;
+                obj.scale.set(scale, scale, scale);
+
+                scene.add(obj);
+                currentModel = obj;
+                setStatus('SYSTEM IDLE', 'var(--text-muted)');
+            } catch (err) {
+                setStatus('RENDER ERROR', 'var(--error)');
+                addLog(`[ERROR] Could not display model: ${err.message}`);
+            }
+        }
+
+        function updateMeshAppearance() {
+            if (!currentModel) return;
+            const useHeatmap = heatmapToggle.checked && viewMode === 'mesh';
+            const alpha = parseInt(meshAlpha.value) / 100;
+            document.getElementById('alphaVal').innerText = meshAlpha.value;
+            meshColor.disabled = useHeatmap;
+            if(useHeatmap) { meshColor.style.opacity = "0.3"; meshColor.style.cursor = "not-allowed"; } else { meshColor.style.opacity = "1"; meshColor.style.cursor = "pointer"; }
+
+            let activePlanes = [];
+            if(clipXToggle.checked) activePlanes.push(planeX);
+            if(clipYToggle.checked) activePlanes.push(planeY);
+            if(clipZToggle.checked) activePlanes.push(planeZ);
+
+            currentModel.traverse((c) => {
+                if (c.isMesh) { c.material.vertexColors = useHeatmap; c.material.color.set(useHeatmap ? 0xffffff : (viewMode === 'geometry' ? 0x9aa4b2 : meshColor.value)); c.material.transparent = alpha < 1.0; c.material.opacity = alpha; c.material.clippingPlanes = activePlanes; c.material.needsUpdate = true; }
+                if (c.isLineSegments) { c.material.color.set(lineColor.value); c.material.clippingPlanes = activePlanes; c.material.needsUpdate = true; }
+            });
+        }
+
+        heatmapToggle.onchange = updateMeshAppearance; meshColor.oninput = updateMeshAppearance; lineColor.oninput = updateMeshAppearance;
+        clipXToggle.onchange = updateMeshAppearance; clipYToggle.onchange = updateMeshAppearance; clipZToggle.onchange = updateMeshAppearance; 
+        meshAlpha.oninput = updateMeshAppearance;
+
+        // --- GENERATE MESH ---
+        genMeshBtn.onclick = async () => {
+            if (!stagedFile) return;
+            toggleMeshLock(true);
+
+            const formData = new FormData();
+            formData.append('cadFile', stagedFile);
+            formData.append('density', meshDensitySlider.value);
+
+            genMeshBtn.innerHTML = `&#9881; Meshing...`;
+            setStatus('PROCESSING', 'var(--warning)');
+            addLog(`[SYSTEM] Uploading ${stagedFile.name}...`);
+
+            try {
+                // The API accepts the job and returns immediately. Progress
+                // arrives on a stream scoped to this job id, so a long mesh no
+                // longer dies against the platform's request timeout.
+                const { job } = await apiJson('/api/mesh', { method: 'POST', body: formData });
+                activeJobId = job.id;
+                addLog(`[QUEUE] Job accepted. Streaming engine output...`);
+                await fetchUserHistory();
+                await followJob(job.id);
+            } catch (err) {
+                addLog(`[ERROR] ${err.message}`);
+                setStatus('FAILED', 'var(--error)');
+                toggleMeshLock(false);
+            }
+        };
+
+        function followJob(jobId) {
+            return new Promise((resolve) => {
+                if (activeSSE) activeSSE.close();
+                activeSSE = eventStream(jobId);
+
+                const finish = async (status) => {
+                    if (activeSSE) { activeSSE.close(); activeSSE = null; }
+                    activeJobId = null;
+                    toggleMeshLock(false);
+                    await fetchUserHistory();
+
+                    if (status === 'completed') {
+                        setStatus('SYSTEM IDLE', 'var(--text-muted)');
+                        try {
+                            const { job } = await apiJson(`/api/jobs/${jobId}`);
+                            await showJob(job);
+                        } catch (err) {
+                            addLog(`[ERROR] ${err.message}`);
+                        }
+                    } else if (status === 'cancelled') {
+                        setStatus('PROCESS TERMINATED', 'var(--error)');
+                    } else {
+                        setStatus('FAILED', 'var(--error)');
+                    }
+                    resolve();
+                };
+
+                activeSSE.onmessage = (event) => {
+                    let data;
+                    try { data = JSON.parse(event.data); } catch { return; }
+                    if (data.log) addLog(data.log.replace(/\n$/, ''));
+                    if (data.status && ['completed', 'failed', 'cancelled'].includes(data.status)) {
+                        finish(data.status);
+                    }
+                };
+
+                // A dropped stream must not leave the UI locked forever, so
+                // the terminal state is confirmed by polling instead.
+                activeSSE.onerror = async () => {
+                    if (activeSSE) { activeSSE.close(); activeSSE = null; }
+                    try {
+                        const { job } = await apiJson(`/api/jobs/${jobId}`);
+                        if (['completed', 'failed', 'cancelled'].includes(job.status)) return finish(job.status);
+                        setTimeout(() => followJob(jobId).then(resolve), 2000);
+                    } catch {
+                        finish('failed');
+                    }
+                };
+            });
+        }
+
+        const themeToggleBtn = document.getElementById('themeToggleBtn'); const themeIcon = document.getElementById('theme-icon');
+        let savedTheme = localStorage.getItem('theme'); let isDarkMode = savedTheme === null ? true : savedTheme === 'dark';
+        function applyTheme() {
+            if (isDarkMode) { document.documentElement.setAttribute('data-theme', 'dark'); themeIcon.innerText = '☀️'; scene.background = new THREE.Color(0x000000); } 
+            else { document.documentElement.removeAttribute('data-theme'); themeIcon.innerText = '🌙'; scene.background = new THREE.Color(0xf4f4f5); }
+        }
+        applyTheme();
+        themeToggleBtn.onclick = () => { isDarkMode = !isDarkMode; localStorage.setItem('theme', isDarkMode ? 'dark' : 'light'); applyTheme(); };
+        
+        // Load the username into the top right corner
+        const savedName = localStorage.getItem('sm_username');
+        if (savedName) document.getElementById('display-username').innerText = savedName;
+        fetchUserHistory(); setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+        document.getElementById('logoutBtn').onclick = () => { clearSession(); window.location.href = 'auth.html'; };
+
+        function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+        animate();
+    </script>
+</body>
+</html>
