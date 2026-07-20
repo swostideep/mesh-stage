@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SM Surface Mesher | CAD Surface Meshing Engine</title>
+    <meta name="description" content="A C++ surface meshing engine for STEP and IGES models. Constrained Delaunay refinement with exact predicates, curvature-adaptive sizing and watertight output.">
+
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    <link rel="stylesheet" href="/css/landing.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+</head>
+<body>
+
+    <nav class="landing-nav">
+        <div class="nav-brand">
+            <div class="sm-block-logo"><span class="letter-s">S</span><span class="letter-m">M</span></div>
+            <span class="brand-text">SURFACE MESHER</span>
+        </div>
+        <div class="nav-links">
+            <a href="#results">Results</a>
+            <a href="#pipeline">Pipeline</a>
+            <a href="#features">Engine</a>
+            <button class="nav-btn-secondary" onclick="window.location.href='auth.html'">Log In</button>
+        </div>
+    </nav>
+
+    <header class="hero-section">
+        <div class="hero-content">
+            <div class="badge fade-up-1">C++ &middot; OpenCASCADE &middot; WebGL</div>
+            <h1 class="fade-up-2">Surface<br><span class="text-highlight">Mesher</span></h1>
+            <p class="fade-up-3">
+                A surface meshing engine for STEP and IGES models. It builds a constrained
+                Delaunay triangulation on an exact integer lattice, refines it against local
+                surface curvature, and returns a watertight mesh with a full quality report.
+            </p>
+            <div class="hero-actions fade-up-4">
+                <button class="btn-primary" onclick="window.location.href='auth.html'">Open the Workspace</button>
+                <button class="btn-outline" onclick="window.location.href='https://github.com/swostideep/mesh-stage'">Read the Source</button>
+            </div>
+        </div>
+
+        <div class="hero-visual fade-up-5">
+            <div id="hero-canvas-container"></div>
+            <div class="glow-orb"></div>
+        </div>
+    </header>
+
+    <section id="results" class="metrics-section">
+        <div class="metrics-head">
+            <span class="section-label">Measured Results</span>
+            <span class="metrics-note">
+                31-face solid (filleted block, three bores, spherical boss), 8&nbsp;threads.
+                Reproduce with <code>sm_bench</code> and <code>sm_tests</code> in the repository.
+            </span>
+        </div>
+        <div class="metric-grid">
+            <div class="metric">
+                <div class="value">141,290</div>
+                <div class="label">Elements generated in 92&nbsp;ms at the finest tested setting</div>
+            </div>
+            <div class="metric">
+                <div class="value">0</div>
+                <div class="label">Free edges and non-manifold edges across every density tested</div>
+            </div>
+            <div class="metric">
+                <div class="value">410k<span>/s</span></div>
+                <div class="label">Core triangulation throughput, elements per second</div>
+            </div>
+            <div class="metric">
+                <div class="value">0.24</div>
+                <div class="label">Mean element skewness; ANSYS treats below 0.5 as good</div>
+            </div>
+            <div class="metric">
+                <div class="value">65</div>
+                <div class="label">Automated invariant checks gating every build</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="pipeline" class="pipeline-section">
+        <span class="section-label">Pipeline</span>
+        <div class="pipeline">
+            <div class="stage">
+                <div class="stage-no">01 / IMPORT</div>
+                <h4>Read and heal</h4>
+                <p>STEP or IGES is imported through OpenCASCADE, then unified, tolerance-repaired and sewn so downstream stages see one consistent shell.</p>
+            </div>
+            <div class="stage">
+                <div class="stage-no">02 / DISCRETISE</div>
+                <h4>Size the edges once</h4>
+                <p>Every model edge is sampled a single time against a chordal sag tolerance. Two faces sharing an edge therefore receive identical nodes.</p>
+            </div>
+            <div class="stage">
+                <div class="stage-no">03 / TRIANGULATE</div>
+                <h4>Mesh faces in parallel</h4>
+                <p>Faces are handed out largest-first to an OpenMP pool. Each is triangulated in a metric-normalised parameter space and refined against curvature.</p>
+            </div>
+            <div class="stage">
+                <div class="stage-no">04 / AUDIT</div>
+                <h4>Weld and verify</h4>
+                <p>Face meshes weld through a spatial hash, then the result is checked for free edges, non-manifold edges, inversions and skewness before it is written.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features-section">
+        <span class="section-label">Engine</span>
+        <div class="feature-grid">
+            <div class="feature-card fade-up-2">
+                <div class="f-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 19h20L12 2Z"/><path d="M12 8v6"/></svg>
+                </div>
+                <h3>Exact geometric predicates</h3>
+                <p>Orientation and in-circle tests run in 128-bit integer arithmetic on a quantised lattice. The sign is always correct, so the triangulation cannot be corrupted by rounding.</p>
+            </div>
+            <div class="feature-card fade-up-3">
+                <div class="f-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18Z"/></svg>
+                </div>
+                <h3>Curvature-adaptive sizing</h3>
+                <p>Element size follows a chordal sag tolerance through the local principal curvatures, so fillets and bores refine automatically while flat walls stay coarse.</p>
+            </div>
+            <div class="feature-card fade-up-4">
+                <div class="f-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </div>
+                <h3>Parallel by face</h3>
+                <p>Faces are independent, so they are scheduled dynamically across cores with the largest first. Thread count is capped to the container's real CPU allowance.</p>
+            </div>
+            <div class="feature-card fade-up-5">
+                <div class="f-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                </div>
+                <h3>Verified, not assumed</h3>
+                <p>Watertightness, manifoldness, element orientation and the Delaunay property are all asserted by an automated suite rather than left to inspection.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer class="landing-footer">
+        <p>Built by swostideep &middot; C++17, OpenMP, OpenCASCADE, Node.js, Three.js</p>
+        <div>
+            <a href="https://github.com/swostideep/mesh-stage">GitHub</a>
+            <a href="auth.html">Log In</a>
+        </div>
+    </footer>
+
+    <script type="module" src="/js/landing3d.js"></script>
+</body>
+</html>
