@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In | SM Surface Mesher</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    <link rel="stylesheet" href="/css/auth.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        .google-btn-wrapper { display: flex; justify-content: center; margin: 16px 0 24px; min-height: 40px; }
+    </style>
+</head>
+<body>
+    <div class="auth-layout">
+        <div class="auth-form-section">
+            <div class="form-container">
+                <a href="index.html" class="back-link">&larr; Back to Home</a>
+                <div class="auth-brand">
+                    <div class="sm-block-logo"><span class="letter-s">S</span><span class="letter-m">M</span></div>
+                    <span class="brand-text">SURFACE MESHER</span>
+                </div>
+
+                <h1 id="auth-title">Welcome back</h1>
+                <p id="auth-subtitle">Log in to access your meshing workspace.</p>
+
+                <div class="google-btn-wrapper">
+                    <div id="g_id_onload"
+                         data-client_id="110719759931-vmhtd8h2tma0d6ap9827ujuu2u11gt20.apps.googleusercontent.com"
+                         data-callback="handleCredentialResponse"
+                         data-auto_prompt="false"></div>
+                    <div class="g_id_signin"
+                         data-type="standard" data-size="large" data-theme="filled_black"
+                         data-text="sign_in_with" data-shape="rectangular"
+                         data-logo_alignment="left" data-width="320"></div>
+                </div>
+
+                <div class="auth-divider"><i></i><span>Or continue with email</span><i></i></div>
+
+                <form id="auth-form" novalidate>
+                    <div class="auth-error" id="auth-error" role="alert" aria-live="polite"></div>
+
+                    <div class="input-group" id="username-group" style="display: none;">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" autocomplete="username" placeholder="How should we address you?">
+                    </div>
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" autocomplete="email" placeholder="you@company.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" autocomplete="current-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
+                        <div class="field-hint" id="password-hint" style="display:none;">At least 8 characters.</div>
+                    </div>
+                    <button type="submit" class="btn-primary auth-submit" id="submit-btn">Log In</button>
+                </form>
+
+                <div class="auth-toggle">
+                    <span id="toggle-text">Don't have an account?</span>
+                    <button type="button" id="toggle-mode-btn" class="text-btn">Sign up</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="auth-visual-section">
+            <div class="visual-overlay"></div>
+            <div class="glow-orb"></div>
+            <div class="visual-content">
+                <h2>Watertight<br><span class="text-highlight">Surface Meshing</span></h2>
+                <p>Upload a STEP or IGES model and get back a curvature-adaptive triangulation with a full quality report: skewness, free edges, manifold status.</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { API_BASE, getToken } from '/js/api.js';
+
+        // Already signed in? Skip the form.
+        if (getToken()) window.location.href = 'dashboard.html';
+
+        let isLogin = true;
+        const toggleBtn = document.getElementById('toggle-mode-btn');
+        const title = document.getElementById('auth-title');
+        const subtitle = document.getElementById('auth-subtitle');
+        const submitBtn = document.getElementById('submit-btn');
+        const toggleText = document.getElementById('toggle-text');
+        const usernameGroup = document.getElementById('username-group');
+        const passwordHint = document.getElementById('password-hint');
+        const authForm = document.getElementById('auth-form');
+        const errorDiv = document.getElementById('auth-error');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        function clearError() {
+            errorDiv.style.display = 'none';
+            emailInput.removeAttribute('aria-invalid');
+            passwordInput.removeAttribute('aria-invalid');
+        }
+        function setBusy(busy, label) {
+            submitBtn.disabled = busy;
+            submitBtn.textContent = busy ? label : (isLogin ? 'Log In' : 'Create Account');
+        }
+
+        toggleBtn.addEventListener('click', () => {
+            isLogin = !isLogin;
+            clearError();
+            title.textContent = isLogin ? 'Welcome back' : 'Create an account';
+            subtitle.textContent = isLogin
+                ? 'Log in to access your meshing workspace.'
+                : 'Set up an account to start meshing CAD models.';
+            submitBtn.textContent = isLogin ? 'Log In' : 'Create Account';
+            toggleText.textContent = isLogin ? "Don't have an account?" : 'Already have an account?';
+            toggleBtn.textContent = isLogin ? 'Sign up' : 'Log in';
+            usernameGroup.style.display = isLogin ? 'none' : 'flex';
+            passwordHint.style.display = isLogin ? 'none' : 'block';
+            passwordInput.autocomplete = isLogin ? 'current-password' : 'new-password';
+        });
+
+        function completeSignIn(data) {
+            localStorage.setItem('token', data.token);
+            const name = data.user?.username || String(data.user?.email || '').split('@')[0] || 'Engineer';
+            localStorage.setItem('sm_username', name);
+            window.location.href = 'dashboard.html';
+        }
+
+        // Errors are read from the response body rather than assumed, so a
+        // rate-limit or duplicate-email reply reaches the user as written.
+        async function postJson(path, payload) {
+            const response = await fetch(`${API_BASE}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            let body = {};
+            try { body = await response.json(); } catch { /* empty body */ }
+            if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+            return body;
+        }
+
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            const username = document.getElementById('username').value.trim();
+
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+                emailInput.setAttribute('aria-invalid', 'true');
+                return showError('Enter a valid email address.');
+            }
+            if (!isLogin && password.length < 8) {
+                passwordInput.setAttribute('aria-invalid', 'true');
+                return showError('Password must be at least 8 characters.');
+            }
+
+            setBusy(true, isLogin ? 'Signing in...' : 'Creating account...');
+            try {
+                const path = isLogin ? '/api/auth/login' : '/api/auth/register';
+                const payload = isLogin ? { email, password } : { email, password, username };
+                completeSignIn(await postJson(path, payload));
+            } catch (err) {
+                showError(err.message);
+                setBusy(false);
+            }
+        });
+
+        window.handleCredentialResponse = async (response) => {
+            clearError();
+            setBusy(true, 'Authenticating with Google...');
+            try {
+                completeSignIn(await postJson('/api/auth/google', { token: response.credential }));
+            } catch (err) {
+                showError(err.message);
+                setBusy(false);
+            }
+        };
+    </script>
+</body>
+</html>
