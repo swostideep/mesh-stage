@@ -1,0 +1,28 @@
+# Keeping the build context small matters here: everything listed below would
+# otherwise be uploaded to the daemon on every build and, worse, node_modules
+# built on a developer machine would shadow the ones installed in the image.
+
+.git
+.gitignore
+.vscode
+.DS_Store
+
+**/node_modules
+**/build
+**/dist
+**/.env
+**/.env.*
+
+sm_backend/uploads
+sm_backend/engine
+sm_frontend
+
+*.obj
+*.step
+*.stp
+*.iges
+*.igs
+*.log
+
+README.md
+docs
