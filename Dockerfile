@@ -8,6 +8,7 @@ FROM node:20-bookworm AS engine-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         cmake \
+        libtbb-dev \
         libocct-data-exchange-dev \
         libocct-foundation-dev \
         libocct-modeling-algorithms-dev \
@@ -31,12 +32,17 @@ RUN cmake -S sm_engine -B build \
     && strip build/voronoi_mesh
 
 # Collect the engine's runtime shared-library closure for the final stage.
+# Everything the binary resolves is copied except the handful the slim base
+# image already provides. Excluding by name rather than including by name means
+# a new transitive dependency cannot be silently left behind - which is how a
+# working build still fails to start in the runtime stage.
 RUN mkdir -p /runtime-libs \
     && ldd build/voronoi_mesh \
        | awk '/=> \//{print $3}' \
-       | grep -E 'occt|TK|libomp|libgomp' \
+       | grep -vE '/(ld-linux[^/]*|libc|libm|libdl|libpthread|librt|libgcc_s|libstdc\+\+)\.so' \
+       | sort -u \
        | xargs -r -I{} cp -L {} /runtime-libs/ \
-    && ls -1 /runtime-libs | wc -l
+    && echo "runtime libs: $(ls -1 /runtime-libs | wc -l)"
 
 WORKDIR /build/deps
 COPY sm_backend/package*.json ./
