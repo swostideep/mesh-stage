@@ -19,6 +19,7 @@
 #include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GeomLProp_SLProps.hxx>
@@ -51,14 +52,9 @@ double msSince(Clock::time_point t) {
     return std::chrono::duration<double, std::milli>(Clock::now() - t).count();
 }
 
-// Tolerance-bucketed node welder.
-//
-// The previous implementation used std::map with a comparator that compared
-// coordinates against a tolerance. Such a comparator is not a strict weak
-// ordering (a==b and b==c does not imply a==c), which is undefined behaviour
-// for the ordered containers and produced both missed and spurious welds.
-// Bucketing into a hash grid and scanning the 27 neighbouring cells gives the
-// intended tolerance semantics with well-defined behaviour and O(1) lookup.
+// Tolerance-bucketed node welder. A tolerance-based comparator is not a strict
+// weak ordering, so std::map cannot be used here; a hash grid scanned over the
+// 27 neighbouring cells gives the same semantics with O(1) lookup.
 class NodeWelder {
 public:
     explicit NodeWelder(double tolerance) : tol_(tolerance), inv_(1.0 / tolerance) {}
@@ -117,20 +113,16 @@ struct FaceResult {
     bool ok = false;
 };
 
-// Absolute sizing limits derived from the model's own dimensions, so the same
-// density setting behaves the same way on a 10 mm bracket and a 4 m airframe
-// panel. The user-facing number is a fraction of the bounding-box diagonal,
-// never a raw millimetre value.
+// Sizing limits derived from the model's own dimensions, so one density
+// setting behaves the same on a 10 mm bracket and a 4 m panel.
 struct Sizing {
     double sag = 0.01;      // permitted chord height between mesh and surface
     double maxEdge = 1.0;
     double minEdge = 0.05;
 };
 
-// Chord height h of a circular arc of radius R spanned by an edge of length L
-// is h = R - sqrt(R^2 - L^2/4), which inverts to L = 2*sqrt(2*R*h) for small
-// h. Driving element size from a sag tolerance is what makes the mesh follow
-// curvature instead of following an arbitrary constant.
+// Chord height h of an arc of radius R over an edge of length L inverts to
+// L = 2*sqrt(2*R*h), which is what ties element size to local curvature.
 double edgeLengthForCurvature(double curvature, const Sizing& s) {
     if (!(curvature > 1e-12)) return s.maxEdge;
     const double radius = 1.0 / curvature;
@@ -176,9 +168,8 @@ FaceResult meshFace(const FaceWork& work, const CadOptions& opts, const Sizing& 
     FaceResult result;
     if (!work.valid || work.uv.size() < 3) return result;
 
-    // Each thread evaluates its own copy of the surface. OpenCASCADE caches
-    // evaluation state inside the surface object, so sharing one handle
-    // across threads is a data race even though nothing is logically mutated.
+    // OpenCASCADE caches evaluation state inside the surface object, so each
+    // thread needs its own copy or the shared handle becomes a data race.
     Handle(Geom_Surface) surf =
         Handle(Geom_Surface)::DownCast(BRep_Tool::Surface(work.face)->Copy());
     if (surf.IsNull()) return result;
@@ -193,9 +184,8 @@ FaceResult meshFace(const FaceWork& work, const CadOptions& opts, const Sizing& 
     request.options.maxRadiusEdgeRatio = 1.42;
     request.options.smoothingPasses = 4;
 
-    // Face boundaries are already discretised globally. Freezing them here is
-    // what makes neighbouring faces weld into a watertight shell instead of
-    // meeting along two independently subdivided, mismatched polylines.
+    // Boundaries are discretised globally; freezing them here is what lets
+    // neighbouring faces weld watertight instead of along mismatched polylines.
     request.options.allowSegmentSplitting = false;
 
     const double su = work.su, sv = work.sv;
@@ -220,26 +210,151 @@ FaceResult meshFace(const FaceWork& work, const CadOptions& opts, const Sizing& 
     return result;
 }
 
-bool readShape(const std::string& path, TopoDS_Shape* shape) {
-    const size_t dot = path.find_last_of('.');
-    std::string ext = (dot == std::string::npos) ? "" : path.substr(dot + 1);
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return char(std::tolower(c)); });
-
-    if (ext == "step" || ext == "stp") {
+bool readShape(const std::string& path, SourceKind kind, TopoDS_Shape* shape) {
+    if (kind == SourceKind::Step) {
         STEPControl_Reader reader;
         if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) return false;
         reader.TransferRoots();
         *shape = reader.OneShape();
-    } else if (ext == "iges" || ext == "igs") {
+    } else if (kind == SourceKind::Iges) {
         IGESControl_Reader reader;
         if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) return false;
         reader.TransferRoots();
         *shape = reader.OneShape();
+    } else if (kind == SourceKind::Brep) {
+        // Native serialisation: exact topology already, no translation step.
+        BRep_Builder builder;
+        if (!BRepTools::Read(*shape, path.c_str(), builder)) return false;
     } else {
         return false;
     }
     return !shape->IsNull();
+}
+
+// --- Already-triangulated input -------------------------------------------
+
+// Triangles as read, before welding: three positions each with no shared
+// indexing, which is how STL stores them and where OBJ is normalised to.
+struct RawMesh {
+    std::vector<Vec3> verts;
+    std::vector<int32_t> groups;
+    int32_t groupCount = 0;
+};
+
+bool readStlBinary(const std::string& path, RawMesh* out) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+
+    in.seekg(0, std::ios::end);
+    const std::streamoff size = in.tellg();
+    if (size < 84) return false;
+
+    in.seekg(80, std::ios::beg);
+    uint32_t count = 0;
+    in.read(reinterpret_cast<char*>(&count), 4);
+    if (!in) return false;
+
+    // The only reliable way to tell binary from ASCII: a binary file is
+    // exactly 84 + 50*count bytes. Plenty of exporters write "solid" into the
+    // binary header, so sniffing the first word gets it wrong.
+    if (std::streamoff(84) + std::streamoff(count) * 50 != size) return false;
+
+    out->verts.reserve(size_t(count) * 3);
+    out->groups.assign(size_t(count), 1);
+    out->groupCount = count > 0 ? 1 : 0;
+
+    for (uint32_t i = 0; i < count; ++i) {
+        float buf[12];
+        in.read(reinterpret_cast<char*>(buf), sizeof(buf));
+        if (!in) return false;
+        in.seekg(2, std::ios::cur);  // attribute byte count, unused
+        for (int v = 0; v < 3; ++v) {
+            out->verts.push_back({double(buf[3 + v * 3]), double(buf[4 + v * 3]),
+                                  double(buf[5 + v * 3])});
+        }
+    }
+    return !out->verts.empty();
+}
+
+bool readStlAscii(const std::string& path, RawMesh* out) {
+    std::ifstream in(path);
+    if (!in) return false;
+
+    std::string token;
+    std::vector<Vec3> pending;
+    while (in >> token) {
+        if (token != "vertex") continue;
+        double x = 0, y = 0, z = 0;
+        if (!(in >> x >> y >> z)) break;
+        pending.push_back({x, y, z});
+        if (pending.size() == 3) {
+            out->verts.insert(out->verts.end(), pending.begin(), pending.end());
+            out->groups.push_back(1);
+            pending.clear();
+        }
+    }
+    out->groupCount = out->groups.empty() ? 0 : 1;
+    return !out->verts.empty();
+}
+
+bool readObjMesh(const std::string& path, RawMesh* out) {
+    std::ifstream in(path);
+    if (!in) return false;
+
+    std::vector<Vec3> positions;
+    int32_t group = 1;
+    int32_t maxGroup = 1;
+    std::string line;
+
+    // "f" indices may be v, v/vt, v//vn or v/vt/vn, and may be negative to
+    // count back from the most recently declared vertex.
+    auto parseIndex = [&](const std::string& field) -> int32_t {
+        const size_t slash = field.find('/');
+        const std::string head = (slash == std::string::npos) ? field : field.substr(0, slash);
+        if (head.empty()) return 0;
+        long idx = 0;
+        try {
+            idx = std::stol(head);
+        } catch (...) {
+            return 0;
+        }
+        if (idx > 0) return int32_t(idx - 1);
+        if (idx < 0) return int32_t(long(positions.size()) + idx);
+        return -1;
+    };
+
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ls(line);
+        std::string tag;
+        ls >> tag;
+
+        if (tag == "v") {
+            double x = 0, y = 0, z = 0;
+            ls >> x >> y >> z;
+            positions.push_back({x, y, z});
+        } else if (tag == "g" || tag == "o") {
+            // Preserve authored grouping so the model tree stays meaningful.
+            group = ++maxGroup;
+        } else if (tag == "f") {
+            std::vector<int32_t> face;
+            std::string field;
+            while (ls >> field) {
+                const int32_t idx = parseIndex(field);
+                if (idx >= 0 && idx < int32_t(positions.size())) face.push_back(idx);
+            }
+            // Fan-triangulate anything with more than three corners.
+            for (size_t k = 2; k < face.size(); ++k) {
+                out->verts.push_back(positions[size_t(face[0])]);
+                out->verts.push_back(positions[size_t(face[k - 1])]);
+                out->verts.push_back(positions[size_t(face[k])]);
+                out->groups.push_back(group);
+            }
+        }
+    }
+
+    out->groupCount = maxGroup;
+    return !out->verts.empty();
 }
 
 Vec3 triangleNormal(const Vec3& a, const Vec3& b, const Vec3& c) {
@@ -255,14 +370,10 @@ Vec3 triangleNormal(const Vec3& a, const Vec3& b, const Vec3& c) {
     return n;
 }
 
-// Quality-driven edge flips on the assembled 3D mesh.
-//
-// The per-face pass optimises angles in parameter space. On a sphere or a cone
-// the parametrisation stretches by a factor that varies across the face, so a
-// triangle that looks well shaped in UV can still be a sliver once projected.
-// This pass measures the element that actually ships. Flips are confined to
-// pairs inside one CAD face whose normals nearly agree, so the operation
-// rearranges connectivity without moving the surface.
+// Quality-driven edge flips on the assembled 3D mesh. The per-face pass works
+// in parameter space, where a stretched parametrisation can hide a sliver that
+// only shows up once projected. Confined to near-coplanar pairs inside a single
+// face, so connectivity changes but the surface does not move.
 int optimiseSurfaceMesh(SurfaceMesh* mesh, int passes) {
     int totalFlips = 0;
 
@@ -347,9 +458,31 @@ int optimiseSurfaceMesh(SurfaceMesh* mesh, int passes) {
     return totalFlips;
 }
 
-// Counts how many triangles use each undirected edge. A closed surface has
-// every edge shared exactly twice; anything else is reported rather than
-// silently shipped.
+// A closed surface shares every edge exactly twice; anything else is reported
+// rather than silently shipped.
+void checkWatertight(const SurfaceMesh& mesh, CadReport* report);
+
+// Shared by both paths, so an imported STL is measured the same way as a mesh
+// the engine generated itself.
+void auditSurfaceMesh(const SurfaceMesh& mesh, CadReport* report) {
+    report->nodes = int(mesh.nodes.size());
+    report->elements = int(mesh.triangles.size());
+
+    double skewSum = 0.0;
+    report->maxSkewness = 0.0;
+    report->highSkewCount = 0;
+    for (const auto& t : mesh.triangles) {
+        const double s = skewness3D(mesh.nodes[size_t(t[0])], mesh.nodes[size_t(t[1])],
+                                    mesh.nodes[size_t(t[2])]);
+        skewSum += s;
+        report->maxSkewness = std::max(report->maxSkewness, s);
+        if (s > 0.5) ++report->highSkewCount;
+    }
+    report->meanSkewness =
+        mesh.triangles.empty() ? 0.0 : skewSum / double(mesh.triangles.size());
+    checkWatertight(mesh, report);
+}
+
 void checkWatertight(const SurfaceMesh& mesh, CadReport* report) {
     std::unordered_map<int64_t, int> uses;
     uses.reserve(mesh.triangles.size() * 3);
@@ -368,6 +501,107 @@ void checkWatertight(const SurfaceMesh& mesh, CadReport* report) {
 
 }  // namespace
 
+SourceKind detectSourceKind(const std::string& path) {
+    const size_t dot = path.find_last_of('.');
+    std::string ext = (dot == std::string::npos) ? "" : path.substr(dot + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return char(std::tolower(c)); });
+
+    if (ext == "step" || ext == "stp") return SourceKind::Step;
+    if (ext == "iges" || ext == "igs") return SourceKind::Iges;
+    if (ext == "brep" || ext == "brp") return SourceKind::Brep;
+    if (ext == "stl") return SourceKind::Stl;
+    if (ext == "obj") return SourceKind::Obj;
+    return SourceKind::Unknown;
+}
+
+const char* sourceKindName(SourceKind kind) {
+    switch (kind) {
+        case SourceKind::Step: return "STEP";
+        case SourceKind::Iges: return "IGES";
+        case SourceKind::Brep: return "BREP";
+        case SourceKind::Stl:  return "STL";
+        case SourceKind::Obj:  return "OBJ";
+        default:               return "unknown";
+    }
+}
+
+bool runMeshImport(const std::string& inputPath, const CadOptions& options,
+                   SurfaceMesh* out, CadReport* report) {
+    const SourceKind kind = detectSourceKind(inputPath);
+    report->source = kind;
+    report->passthrough = true;
+
+    auto t0 = Clock::now();
+    RawMesh raw;
+    if (kind == SourceKind::Stl) {
+        // Binary is checked first because its size formula is decisive; the
+        // ASCII parser would happily consume a binary file's stray text.
+        if (!readStlBinary(inputPath, &raw)) {
+            raw = RawMesh{};
+            if (!readStlAscii(inputPath, &raw)) return false;
+        }
+    } else if (kind == SourceKind::Obj) {
+        if (!readObjMesh(inputPath, &raw)) return false;
+    } else {
+        return false;
+    }
+    report->loadMs = msSince(t0);
+    if (raw.verts.size() < 3) return false;
+
+    t0 = Clock::now();
+
+    // STL repeats every shared vertex once per touching triangle, so without
+    // welding the mesh has no connectivity and every edge reads as free.
+    Vec3 lo = raw.verts[0], hi = raw.verts[0];
+    for (const Vec3& p : raw.verts) {
+        lo.x = std::min(lo.x, p.x); hi.x = std::max(hi.x, p.x);
+        lo.y = std::min(lo.y, p.y); hi.y = std::max(hi.y, p.y);
+        lo.z = std::min(lo.z, p.z); hi.z = std::max(hi.z, p.z);
+    }
+    const double diagonal = distance(lo, hi);
+    const double weldTol = std::max(diagonal * 1e-6, 1e-12);
+
+    NodeWelder welder(weldTol);
+    out->nodes.clear();
+    out->triangles.clear();
+    out->faceOfTriangle.clear();
+    out->nodes.reserve(raw.verts.size() / 3);
+
+    const size_t triCount = raw.verts.size() / 3;
+    for (size_t i = 0; i < triCount; ++i) {
+        const int32_t a = welder.insert(raw.verts[i * 3 + 0], out->nodes, &report->duplicateNodesWelded);
+        const int32_t b = welder.insert(raw.verts[i * 3 + 1], out->nodes, &report->duplicateNodesWelded);
+        const int32_t c = welder.insert(raw.verts[i * 3 + 2], out->nodes, &report->duplicateNodesWelded);
+        if (a == b || b == c || a == c) {
+            ++report->degenerateDropped;
+            continue;
+        }
+        const Vec3& pa = out->nodes[size_t(a)];
+        const Vec3& pb = out->nodes[size_t(b)];
+        const Vec3& pc = out->nodes[size_t(c)];
+        const double ux = pb.x - pa.x, uy = pb.y - pa.y, uz = pb.z - pa.z;
+        const double vx = pc.x - pa.x, vy = pc.y - pa.y, vz = pc.z - pa.z;
+        const double nx = uy * vz - uz * vy;
+        const double ny = uz * vx - ux * vz;
+        const double nz = ux * vy - uy * vx;
+        if (0.5 * std::sqrt(nx * nx + ny * ny + nz * nz) < weldTol * weldTol) {
+            ++report->degenerateDropped;
+            continue;
+        }
+        out->triangles.push_back({a, b, c});
+        out->faceOfTriangle.push_back(i < raw.groups.size() ? raw.groups[i] : 1);
+    }
+    out->faceCount = raw.groupCount;
+    report->faces = raw.groupCount;
+    report->assembleMs = msSince(t0);
+
+    // No refinement, smoothing or flipping: the element sizes came from the
+    // exporter and rewriting them would misrepresent the file being inspected.
+    auditSurfaceMesh(*out, report);
+    return !out->triangles.empty();
+}
+
 bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
                     SurfaceMesh* out, SurfaceMesh* preview, CadReport* report) {
     const int threads = resolveThreadCount(options.threads);
@@ -375,9 +609,14 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
     omp_set_num_threads(threads);
 #endif
 
+    const SourceKind kind = detectSourceKind(inputPath);
+    report->source = kind;
+    report->passthrough = false;
+    if (!isBoundaryRep(kind)) return false;
+
     auto t0 = Clock::now();
     TopoDS_Shape raw;
-    if (!readShape(inputPath, &raw)) return false;
+    if (!readShape(inputPath, kind, &raw)) return false;
     report->loadMs = msSince(t0);
 
     t0 = Clock::now();
@@ -413,9 +652,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
     report->edges = edgeMap.Extent();
     if (faces.empty()) return false;
 
-    // Absolute sizing derived from the model itself. The density argument is a
-    // fraction of the bounding-box diagonal, which keeps the same slider
-    // position meaningful across parts of wildly different physical size.
+    // Density is a fraction of the bounding-box diagonal, which keeps one
+    // slider position meaningful across parts of very different size.
     Bnd_Box bounds;
     BRepBndLib::Add(shape, bounds);
     double bx1, by1, bz1, bx2, by2, bz2;
@@ -450,9 +688,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
         for (int j = 1; j <= sampler.NbPoints(); ++j) params.push_back(sampler.Parameter(j));
         if (params.size() < 2) continue;
 
-        // Deflection sampling alone leaves a straight edge as a single long
-        // chord. Densify so no boundary segment exceeds the target size,
-        // otherwise the face interior refines while its border stays coarse.
+        // Deflection sampling leaves a straight edge as one long chord, so
+        // densify or the interior refines while the border stays coarse.
         std::vector<double>& seeds = edgeSeeds[size_t(i)];
         seeds.push_back(params.front());
         for (size_t j = 1; j < params.size(); ++j) {
@@ -466,9 +703,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
     }
     report->discretiseMs = msSince(t0);
 
-    // Boundary extraction stays serial: BRep_Tool::CurveOnSurface reads
-    // topology shared between neighbouring faces and populates lazy caches
-    // inside it. It is cheap next to the meshing that follows.
+    // Serial: CurveOnSurface populates lazy caches in topology shared between
+    // neighbouring faces. Cheap next to the meshing that follows.
     t0 = Clock::now();
     std::vector<FaceWork> work(faces.size());
     for (size_t f = 0; f < faces.size(); ++f) {
@@ -481,9 +717,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
         Handle(Geom_Surface) surf = BRep_Tool::Surface(w.face);
         if (surf.IsNull()) continue;
 
-        // Rescaling parameter space by the local surface stretch means the
-        // triangulator optimises angles that correspond to the real 3D
-        // element, not to the parametrisation's distortion of it.
+        // Rescaling by local surface stretch means angles are optimised for
+        // the real 3D element, not the parametrisation's distortion of it.
         surfaceScale(surf, w.uMin + uRange * 0.5, w.vMin + vRange * 0.5, &w.su, &w.sv);
 
         std::unordered_map<int64_t, int32_t> dedup;
@@ -509,12 +744,9 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
 
             std::vector<double> params;
             if (BRep_Tool::Degenerated(edge)) {
-                // A degenerate edge collapses to a point in 3D but is still a
-                // real line in parameter space: the v = +/-pi/2 rows of a
-                // sphere, for instance. Skipping it leaves the UV domain open
-                // along that side, so the triangulator meshes to the convex
-                // hull instead of to the face, and the pole ends up with a
-                // hole in it. Sample the 2D curve directly.
+                // Collapses to a point in 3D but is still a real line in
+                // parameter space (a sphere's v = +/-pi/2 rows). Skipping it
+                // leaves the UV domain open and the pole comes out holed.
                 const gp_Pnt2d a = pcurve->Value(first);
                 const gp_Pnt2d b = pcurve->Value(last);
                 const double span = std::hypot((b.X() - a.X()) * w.su, (b.Y() - a.Y()) * w.sv);
@@ -546,9 +778,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
         w.valid = w.uv.size() >= 3 && !w.segments.empty();
     }
 
-    // Largest faces first with dynamic hand-out. Face cost varies by orders of
-    // magnitude between a small fillet and a large freeform patch, so a static
-    // split leaves cores idle waiting on one straggler.
+    // Largest first, handed out dynamically: face cost varies by orders of
+    // magnitude and a static split leaves cores waiting on one straggler.
     std::vector<int> order(faces.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(), [&](int a, int b) {
@@ -568,12 +799,10 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
     }
     report->meshMs = msSince(t0);
 
-    // Weld face meshes into one indexed surface. Serial by design: it is a
-    // few percent of the runtime and keeps node numbering deterministic,
-    // which matters when a result has to be reproduced.
-    // Loose enough to close the gap left by two faces evaluating the same
-    // shared edge through different parametrisations, tight enough that it
-    // can never merge two nodes of the same element.
+    // Serial by design: a few percent of the runtime, and it keeps node
+    // numbering deterministic. The tolerance is loose enough to close the gap
+    // between two faces evaluating a shared edge through different
+    // parametrisations, tight enough never to merge nodes of one element.
     const double weldTol = std::max(sizing.minEdge * 0.25, 1e-12);
     NodeWelder welder(weldTol);
     out->nodes.clear();
@@ -594,9 +823,8 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
             const int32_t a = remap[size_t(t[0])], b = remap[size_t(t[1])], c = remap[size_t(t[2])];
             if (a == b || b == c || a == c) continue;  // collapsed by welding
 
-            // Welding can also leave a triangle with three distinct but
-            // near-collinear nodes. Those carry no area and would dominate
-            // the skewness report, so they are dropped here.
+            // Welding can leave three distinct but near-collinear nodes,
+            // which carry no area and would dominate the skewness report.
             const Vec3& pa = out->nodes[size_t(a)];
             const Vec3& pb = out->nodes[size_t(b)];
             const Vec3& pc = out->nodes[size_t(c)];
@@ -618,19 +846,7 @@ bool runCadPipeline(const std::string& inputPath, const CadOptions& options,
 
     report->surfaceFlips = optimiseSurfaceMesh(out, 6);
 
-    report->nodes = int(out->nodes.size());
-    report->elements = int(out->triangles.size());
-
-    double skewSum = 0.0;
-    for (const auto& t : out->triangles) {
-        const double s = skewness3D(out->nodes[size_t(t[0])], out->nodes[size_t(t[1])],
-                                    out->nodes[size_t(t[2])]);
-        skewSum += s;
-        report->maxSkewness = std::max(report->maxSkewness, s);
-        if (s > 0.5) ++report->highSkewCount;
-    }
-    report->meanSkewness = out->triangles.empty() ? 0.0 : skewSum / double(out->triangles.size());
-    checkWatertight(*out, report);
+    auditSurfaceMesh(*out, report);
 
     // Reference tessellation of the healed solid, used by the viewer to show
     // the incoming geometry alongside the generated mesh.

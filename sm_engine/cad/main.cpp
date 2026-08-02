@@ -39,7 +39,8 @@ double argDouble(int argc, char** argv, int index, double fallback) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <input.step|input.iges> [deflection] [output.obj]\n",
+        std::fprintf(stderr,
+                     "usage: %s <input.step|.iges|.brep|.stl|.obj> [density] [output.obj]\n",
                      argv[0]);
         return 2;
     }
@@ -73,24 +74,53 @@ int main(int argc, char** argv) {
     sm::SurfaceMesh preview;
     sm::CadReport report;
 
-    std::cout << "\n[--- PHASE 2: TOPOLOGY AUDIT & HEALING ---]" << std::endl;
-    std::cout.flush();
-
-    if (!sm::runCadPipeline(input, options, &mesh, &preview, &report)) {
-        std::cerr << "[ERROR] Unable to mesh " << input
-                  << ". The file may be unreadable or contain no surfaces." << std::endl;
-        return 1;
+    const sm::SourceKind kind = sm::detectSourceKind(input);
+    if (kind == sm::SourceKind::Unknown) {
+        std::cerr << "[ERROR] Unsupported format. Accepts STEP, IGES, BREP, STL and OBJ."
+                  << std::endl;
+        return 2;
     }
+    std::cout << "[SYSTEM] Source Format    : " << sm::sourceKindName(kind) << std::endl;
 
-    std::cout << "  -> Healed shape: " << report.faces << " faces, " << report.edges
-              << " edges (" << report.healMs << " ms)" << std::endl;
+    if (sm::isBoundaryRep(kind)) {
+        std::cout << "\n[--- PHASE 2: TOPOLOGY AUDIT & HEALING ---]" << std::endl;
+        std::cout.flush();
 
-    std::cout << "\n[--- PHASE 3: SURFACE DISCRETIZATION ---]" << std::endl;
-    std::cout << "  -> Edge discretisation : " << report.discretiseMs << " ms" << std::endl;
-    std::cout << "  -> Boundary extraction : " << report.assembleMs << " ms" << std::endl;
-    std::cout << "  -> Parallel face mesh  : " << report.meshMs << " ms" << std::endl;
-    if (report.failedFaces > 0) {
-        std::cout << "  -> Skipped faces       : " << report.failedFaces << std::endl;
+        if (!sm::runCadPipeline(input, options, &mesh, &preview, &report)) {
+            std::cerr << "[ERROR] Unable to mesh " << input
+                      << ". The file may be unreadable or contain no surfaces." << std::endl;
+            return 1;
+        }
+
+        std::cout << "  -> Healed shape: " << report.faces << " faces, " << report.edges
+                  << " edges (" << report.healMs << " ms)" << std::endl;
+
+        std::cout << "\n[--- PHASE 3: SURFACE DISCRETIZATION ---]" << std::endl;
+        std::cout << "  -> Edge discretisation : " << report.discretiseMs << " ms" << std::endl;
+        std::cout << "  -> Boundary extraction : " << report.assembleMs << " ms" << std::endl;
+        std::cout << "  -> Parallel face mesh  : " << report.meshMs << " ms" << std::endl;
+        if (report.failedFaces > 0) {
+            std::cout << "  -> Skipped faces       : " << report.failedFaces << std::endl;
+        }
+    } else {
+        // Already triangulated. Saying so plainly matters: the density slider
+        // is live in the UI and a user is entitled to wonder why moving it
+        // changes nothing for this file.
+        std::cout << "\n[--- PHASE 2: MESH IMPORT ---]" << std::endl;
+        std::cout << "[SYSTEM] Input is already triangulated. Curvature-adaptive"
+                  << " refinement does not apply;" << std::endl;
+        std::cout << "         the density setting is ignored and the mesh is"
+                  << " passed through as authored." << std::endl;
+        std::cout.flush();
+
+        if (!sm::runMeshImport(input, options, &mesh, &report)) {
+            std::cerr << "[ERROR] Unable to read " << input
+                      << ". The file may be corrupt or contain no triangles." << std::endl;
+            return 1;
+        }
+
+        std::cout << "  -> Parsed  : " << report.loadMs << " ms" << std::endl;
+        std::cout << "  -> Welded  : " << report.assembleMs << " ms" << std::endl;
     }
 
     std::cout << "\n[--- PHASE 4: GLOBAL MESH AUDIT ---]" << std::endl;
