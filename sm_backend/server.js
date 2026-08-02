@@ -8,6 +8,17 @@ const { createJobRunner } = require('./src/services/jobRunner');
 const { createApp } = require('./src/app');
 
 async function main() {
+    // Reported as a readable list rather than a stack trace: this is the first
+    // thing an operator sees in the platform log when a deploy fails to boot.
+    if (config.missingProductionVars) {
+        process.stderr.write(
+            '\nCannot start: required configuration is missing.\n\n' +
+                config.missingProductionVars.map((line) => `  ${line}\n`).join('') +
+                '\nSet these and redeploy. See DEPLOY.md.\n\n'
+        );
+        process.exit(1);
+    }
+
     const store = await createStore();
     const queue = createQueue(createJobRunner(store));
     const app = createApp(store, queue);

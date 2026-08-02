@@ -65,12 +65,24 @@ const config = {
     redisUrl: process.env.REDIS_URL || ''
 };
 
-// A missing secret in production is a hard stop; in development we generate an
-// ephemeral one so a fresh clone runs without any configuration at all.
-if (!config.auth.jwtSecret) {
-    if (config.env === 'production') {
-        throw new Error('JWT_SECRET must be set in production');
+// Production is a hard stop on missing configuration; development fills in an
+// ephemeral secret so a fresh clone runs with no setup at all.
+//
+// Everything missing is reported at once. Failing on the first one costs a
+// whole rebuild per variable to discover the next, which on a platform that
+// takes ten minutes to build an image is a bad way to spend an afternoon.
+if (config.env === 'production') {
+    const missing = [];
+    if (!config.auth.jwtSecret) {
+        missing.push('JWT_SECRET      any long random string; signs session tokens');
     }
+    if (!config.mongoUri) {
+        missing.push('MONGODB_URI     connection string; without it accounts vanish on restart');
+    }
+    if (missing.length > 0) {
+        config.missingProductionVars = missing;
+    }
+} else if (!config.auth.jwtSecret) {
     config.auth.jwtSecret = require('crypto').randomBytes(32).toString('hex');
     config.auth.ephemeralSecret = true;
 }
