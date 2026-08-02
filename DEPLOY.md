@@ -47,7 +47,11 @@ git push hf main --force
 
 Expect roughly 10–15 minutes for the first build: it installs OpenCASCADE,
 compiles the engine and runs the test suite as a build step, so a broken engine
-fails the build rather than shipping.
+fails the build rather than shipping. The resulting image is about 124 MB.
+
+If a required secret is missing the container stops immediately and prints
+every missing variable at once, so you do not spend a rebuild per variable
+finding out about the next one.
 
 ### Verify
 
