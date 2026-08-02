@@ -10,10 +10,10 @@ pinned: false
 
 # SM Surface Mesher
 
-A surface meshing engine for STEP and IGES models. It reads a CAD file through
-OpenCASCADE, builds a constrained Delaunay triangulation of each face on an
-exact integer lattice, refines it against local surface curvature, and welds the
-faces into a single watertight mesh with a quality report.
+A surface meshing engine for STEP, IGES and BREP models. It reads a CAD file
+through OpenCASCADE, builds a constrained Delaunay triangulation of each face on
+an exact integer lattice, refines it against local surface curvature, and welds
+the faces into a single watertight mesh with a quality report.
 
 - **App:** https://mesh-stage.vercel.app
 - **API:** https://huggingface.co/spaces/swostideep/mesh-stage-API
@@ -67,6 +67,42 @@ The gap is algorithmic, not micro-optimisation:
 | Dead triangles        | Never reclaimed                                | Free list |
 
 ---
+
+## Supported formats
+
+| Format | Extension | Treatment |
+|--------|-----------|-----------|
+| STEP   | `.step` `.stp` | Meshed. Curvature-adaptive, density applies. |
+| IGES   | `.iges` `.igs` | Meshed. Curvature-adaptive, density applies. |
+| BREP   | `.brep` `.brp` | Meshed. OpenCASCADE's native serialisation. |
+| STL    | `.stl`         | View only. Binary and ASCII. |
+| OBJ    | `.obj`         | View only. |
+
+The split is not arbitrary. STEP, IGES and BREP carry boundary representation —
+trimmed surfaces with topology — which is the input the mesher actually
+consumes, so it can sample them at whatever density is asked for.
+
+STL and OBJ are already triangulated. The surface the mesher would sample no
+longer exists, so there is nothing to refine and the density setting has no
+effect on them. They are still worth accepting: they get welded (STL repeats
+every shared vertex once per touching triangle, so without welding the mesh has
+no connectivity at all) and then run through the same audit, which answers the
+question people usually have about a downloaded STL — is it watertight, is it
+manifold, how bad are the elements. Nothing is silently rewritten; the geometry
+that comes out is the geometry that went in.
+
+### What is not supported, and why
+
+**SLDPRT, Parasolid (`.x_t`), ACIS (`.sat`)** — closed formats. Reading them
+needs a commercial kernel (HOOPS Exchange, CAD Exchanger, Datakit); there is no
+free or legal path, and the licences generally forbid redistribution in a hosted
+application. This is a licensing wall, not a missing feature. Every one of these
+CAD systems exports STEP natively, which is the intended route.
+
+**`.blend`** — Blender is not a B-rep modeller. A `.blend` holds polygons, not
+trimmed NURBS with topology, so there is nothing for this engine to mesh.
+Exporting OBJ or STL from Blender and using the view-only path is the equivalent
+operation, and it already works.
 
 ## How it works
 
@@ -135,11 +171,17 @@ cmake --build sm_engine/build -j
 
 # Mesh a model directly
 ./sm_engine/build/voronoi_mesh part.step 0.05 out.obj
+./sm_engine/build/voronoi_mesh scan.stl  0.05 out.obj   # view-only passthrough
 ```
 
-`voronoi_mesh` writes two files: the mesh, and `out_geometry.obj` — a reference
-tessellation of the healed CAD shape that the viewer uses for its
-geometry/mesh toggle.
+For a B-rep input, `voronoi_mesh` writes two files: the mesh, and
+`out_geometry.obj` — a reference tessellation of the healed CAD shape that the
+viewer uses for its geometry/mesh toggle. A view-only input produces just the
+mesh, and the viewer's Geometry button stays disabled because there is no
+separate source geometry to show.
+
+Exit status is `0` on success, `1` when the file cannot be read or yields no
+elements, and `2` for a bad invocation or an unsupported extension.
 
 ### Running the API locally
 
@@ -195,8 +237,9 @@ The API targets a container with two vCPUs and an ephemeral disk.
   per-job event stream. Holding the HTTP request open until the engine finished
   meant any long mesh died against the platform's proxy timeout even though the
   job itself completed.
-- Uploads are capped, sniffed for a real STEP/IGES preamble, and swept after a
-  retention window so a long-running container cannot fill its own disk.
+- Uploads are capped, sniffed for a real signature of the format they claim to
+  be, and swept after a retention window so a long-running container cannot fill
+  its own disk.
 - The runtime image contains the engine binary, its shared-library closure and
   production Node modules — not the compilers and OCCT headers used to build it.
 
