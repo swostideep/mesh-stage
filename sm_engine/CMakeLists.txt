@@ -64,9 +64,32 @@ add_test(NAME core COMMAND sm_tests)
 # a machine with nothing but a compiler.
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
+  # Link only the toolkits the engine uses. OpenCASCADE_LIBRARIES pulls in the
+  # whole distribution including the DRAW/Tcl test harness, one of which
+  # installs an exit handler that discards main()'s return value - and the API
+  # decides whether a job succeeded from that exit code. Filtering the list is
+  # not enough because an unfiltered toolkit drags the harness back in through
+  # its own dependencies. TARGET probing survives the 7.8 renames.
+  set(SM_OCCT_CANDIDATES
+      TKernel TKMath
+      TKG2d TKG3d TKGeomBase TKGeomAlgo
+      TKBRep TKTopAlgo TKPrim TKBO TKOffset
+      TKShHealing TKMesh TKXSBase
+      # Data exchange: 7.8+ names first, pre-7.8 equivalents after.
+      TKDESTEP TKSTEP TKSTEPBase TKSTEPAttr TKSTEP209
+      TKDEIGES TKIGES)
+
+  set(SM_OCCT_LIBS "")
+  foreach(occt_lib ${SM_OCCT_CANDIDATES})
+    if(TARGET ${occt_lib})
+      list(APPEND SM_OCCT_LIBS ${occt_lib})
+    endif()
+  endforeach()
+  message(STATUS "OpenCASCADE toolkits: ${SM_OCCT_LIBS}")
+
   add_executable(voronoi_mesh cad/main.cpp cad/occt_pipeline.cpp)
   target_include_directories(voronoi_mesh SYSTEM PRIVATE ${OpenCASCADE_INCLUDE_DIR})
-  target_link_libraries(voronoi_mesh PRIVATE sm_core ${OpenCASCADE_LIBRARIES})
+  target_link_libraries(voronoi_mesh PRIVATE sm_core ${SM_OCCT_LIBS})
   if(OpenMP_CXX_FOUND)
     target_link_libraries(voronoi_mesh PRIVATE OpenMP::OpenMP_CXX)
   endif()
