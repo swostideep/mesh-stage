@@ -9,6 +9,7 @@
 //   - Euler characteristic matches a disc or an annulus as appropriate
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <map>
 #include <set>

@@ -1,6 +1,8 @@
 #include "sm/mesher.h"
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <unordered_map>
 
 #include "triangulator.h"

@@ -7,6 +7,7 @@
 // server, which streams this output to the browser and scrapes the node,
 // element and skewness counts out of it.
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>

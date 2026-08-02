@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "triangulator.h"
