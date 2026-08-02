@@ -1,9 +1,5 @@
-// Single place the API host is configured.
-//
-// Previously every page had the deployment URL pasted into each fetch call, so
-// pointing the frontend at a local backend meant editing a dozen string
-// literals. Override at runtime by setting window.SM_API_BASE before this
-// module loads, or by serving from localhost, which selects the dev port.
+// Single place the API host is configured. Override at runtime with
+// window.SM_API_BASE, or serve from localhost to pick up the dev port.
 
 const fromGlobal = typeof window !== 'undefined' && window.SM_API_BASE;
 const isLocal =

@@ -185,8 +185,8 @@
                 <div style="padding: 16px;">
                     <div id="dropZone" class="drop-zone">
                         <svg class="drop-zone-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                        <div class="drop-zone-text" id="dropZoneText">Drag & Drop CAD file<br><span style="font-size: 10px;">or click to browse (.step, .iges)</span></div>
-                        <input type="file" id="fileInput" accept=".step,.stp,.iges,.igs" style="display: none;" />
+                        <div class="drop-zone-text" id="dropZoneText">Drag &amp; Drop CAD file<br><span style="font-size: 10px;">.step .iges .brep &middot; .stl .obj (view only)</span></div>
+                        <input type="file" id="fileInput" accept=".step,.stp,.iges,.igs,.brep,.brp,.stl,.obj" style="display: none;" />
                     </div>
                 </div>
 
@@ -375,15 +375,26 @@
             if(fileInput.files.length) handleFileSelect(fileInput.files[0]);
         };
 
+        // STEP, IGES and BREP carry surfaces the engine can sample, so density
+        // drives the result. STL and OBJ are already triangles: there is no
+        // surface left to refine, so they are welded and inspected as authored.
+        const BREP_FORMATS = ['step', 'stp', 'iges', 'igs', 'brep', 'brp'];
+        const MESH_FORMATS = ['stl', 'obj'];
+
         function handleFileSelect(file) {
             const ext = file.name.split('.').pop().toLowerCase();
-            if(!['step', 'stp', 'iges', 'igs'].includes(ext)) {
-                alert("Only .step and .iges files are supported."); return;
+            if (!BREP_FORMATS.includes(ext) && !MESH_FORMATS.includes(ext)) {
+                alert("Supported formats: .step, .iges, .brep (meshed) and .stl, .obj (view only).");
+                return;
             }
             stagedFile = file;
             dropZoneText.innerHTML = `<span style="color:var(--accent); font-weight:700;">File Ready:</span><br>${file.name}`;
             genMeshBtn.disabled = false; genMeshBtn.style.opacity = "1"; genMeshBtn.style.cursor = "pointer";
             addLog(`[SYSTEM] Staged file: ${file.name}. Ready to generate.`);
+            if (MESH_FORMATS.includes(ext)) {
+                addLog(`[SYSTEM] ${ext.toUpperCase()} is already triangulated - it will be welded and`);
+                addLog(`         audited, but target density does not apply to it.`);
+            }
         }
 
         // --- UI LOCK/UNLOCK MECHANISM ---
@@ -409,8 +420,7 @@
             if (!activeJobId) return;
             if (!confirm("Stop the current meshing engine? This will terminate the server process.")) return;
             try {
-                // Scoped to this job: the endpoint verifies ownership, so it
-                // can no longer terminate whatever happened to be running.
+                // Scoped to this job; the endpoint verifies ownership.
                 await apiFetch(`/api/jobs/${activeJobId}/cancel`, { method: 'POST' });
                 if (activeSSE) { activeSSE.close(); activeSSE = null; }
                 toggleMeshLock(false);
@@ -544,9 +554,8 @@
                         </div>`;
                 }).join('');
 
-                // Delegated handlers. The rows used to carry inline onclick
-                // attributes that interpolated server values straight into
-                // markup, which breaks on any filename containing a quote.
+                // Delegated rather than inline onclick, which would break on
+                // any filename containing a quote.
                 historyList.querySelectorAll('[data-open]').forEach(el => {
                     el.onclick = () => openJob(el.dataset.open);
                 });
