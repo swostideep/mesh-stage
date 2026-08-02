@@ -39,7 +39,9 @@ const config = {
         // is swept so a long-running Space cannot fill its own volume.
         retentionMs: int(process.env.SM_RETENTION_MS, 6 * 60 * 60 * 1000),
         sweepIntervalMs: int(process.env.SM_SWEEP_INTERVAL_MS, 15 * 60 * 1000),
-        allowedExtensions: ['.step', '.stp', '.iges', '.igs']
+        // STEP/IGES/BREP carry real geometry and get meshed. STL/OBJ arrive
+        // already triangulated and are passed through for inspection only.
+        allowedExtensions: ['.step', '.stp', '.iges', '.igs', '.brep', '.brp', '.stl', '.obj']
     },
 
     auth: {

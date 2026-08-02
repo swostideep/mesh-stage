@@ -55,7 +55,7 @@ module.exports = function meshRoutes(store, queue) {
         fileFilter: (req, file, cb) => {
             const ext = path.extname(file.originalname).toLowerCase();
             if (!config.uploads.allowedExtensions.includes(ext)) {
-                return cb(httpError(415, 'Only STEP and IGES files are accepted.'));
+                return cb(httpError(415, 'Accepted formats: STEP, IGES, BREP, STL, OBJ.'));
             }
             return cb(null, true);
         }
@@ -90,7 +90,7 @@ module.exports = function meshRoutes(store, queue) {
             const kind = await storage.sniffCadFile(req.file.path);
             if (!kind) {
                 await storage.remove(req.file.filename);
-                throw httpError(415, 'That file is not a readable STEP or IGES model.');
+                throw httpError(415, 'That file is not a readable CAD or mesh model.');
             }
 
             const density = clampDensity(req.body.density);
@@ -116,10 +116,8 @@ module.exports = function meshRoutes(store, queue) {
                 }
             });
 
-            // Returns immediately. Holding the HTTP request open until the
-            // engine finished was the previous behaviour, and any mesh taking
-            // longer than the platform's proxy timeout died with a gateway
-            // error even though the job itself completed.
+            // Returns immediately: holding the request open until the engine
+            // finished would kill any mesh slower than the proxy timeout.
             res.status(202).json({ job: publicJob(job) });
         })
     );
