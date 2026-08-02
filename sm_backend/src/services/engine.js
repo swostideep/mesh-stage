@@ -7,11 +7,8 @@ const config = require('../config');
 const logger = require('../logger');
 const events = require('./events');
 
-// Tracks the child process for each in-flight job.
-//
-// The previous version kept a single module-level handle, so the stop endpoint
-// terminated whichever job happened to be running rather than the caller's.
-// Keying by job id lets the route check ownership before signalling.
+// Child processes are tracked by job id so the stop endpoint can verify
+// ownership before signalling, rather than killing whatever is running.
 const running = new Map();
 
 const PATTERNS = [
@@ -63,9 +60,8 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
         const child = spawn(config.engine.binary, args, {
             env: {
                 ...process.env,
-                // Both the engine's own pool and any nested BLAS-style pool
-                // are pinned, otherwise each oversubscribes the two cores a
-                // free Space actually has.
+                // Pinned so the engine's pool does not oversubscribe the two
+                // cores a free Space actually has.
                 OMP_NUM_THREADS: String(config.engine.threads),
                 SM_THREADS: String(config.engine.threads),
                 SM_MAX_ELEMENTS: String(config.engine.maxElements)

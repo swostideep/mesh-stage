@@ -1,8 +1,7 @@
 'use strict';
 
-// Deliberately tiny. The previous middleware printed bearer tokens and secret
-// presence to stdout on every request, which lands verbatim in the hosting
-// provider's log viewer. Nothing here ever accepts a credential.
+// Deliberately tiny, and it never accepts a credential: anything written here
+// lands verbatim in the hosting provider's log viewer.
 
 const levels = { error: 0, warn: 1, info: 2, debug: 3 };
 const threshold = levels[process.env.SM_LOG_LEVEL] ?? levels.info;

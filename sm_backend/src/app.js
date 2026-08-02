@@ -11,9 +11,8 @@ const authRoutes = require('./routes/auth');
 const meshRoutes = require('./routes/mesh');
 const { notFound, errorHandler } = require('./middleware/errors');
 
-// Written by hand rather than pulling in a helmet dependency: the API serves
-// JSON and file downloads only, so it needs four headers, and every megabyte
-// left out of the image is a faster cold start on a free container.
+// Written by hand rather than pulling in helmet: the API serves JSON and file
+// downloads only, so it needs four headers.
 function securityHeaders(req, res, next) {
     res.set('X-Content-Type-Options', 'nosniff');
     res.set('X-Frame-Options', 'DENY');

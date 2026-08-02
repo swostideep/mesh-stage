@@ -6,11 +6,10 @@ namespace sm {
 
 using i128 = __int128;
 
-// Mesh vertices live on an integer lattice so that the orientation and
-// in-circle tests below are exact rather than merely accurate. Input
-// coordinates are mapped into [0, kQuantScale] and the enclosing
-// super-triangle sits at roughly eight times that span, which keeps every
-// intermediate product inside the 127 bits __int128 gives us:
+// Vertices live on an integer lattice so the predicates below are exact rather
+// than merely accurate. Coordinates map into [0, kQuantScale] with the
+// super-triangle at roughly eight times that span, keeping every intermediate
+// product inside the 127 bits __int128 provides:
 //
 //   coordinate delta   <= 2^26
 //   lift (dx^2 + dy^2) <= 2^53

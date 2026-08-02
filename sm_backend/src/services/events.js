@@ -1,12 +1,8 @@
 'use strict';
 
-// Per-job progress channels.
-//
-// The previous implementation kept one global array of response objects and
-// wrote every engine line to all of them. Any signed-in user watching the
-// progress stream therefore received the filenames and engine output of every
-// other user's job. Streams are now keyed by job id and the route that opens
-// one verifies ownership first.
+// Per-job progress channels. Streams are keyed by job id and the route that
+// opens one verifies ownership, so a client only ever sees its own engine
+// output.
 
 const MAX_BUFFERED_LINES = 400;
 
@@ -26,8 +22,8 @@ class ProgressHub {
 
     publish(jobId, payload) {
         const ch = this.channel(jobId);
-        // Replayed to late subscribers so a client that connects a moment
-        // after the job starts does not miss the opening phase.
+        // Replayed to late subscribers so a client connecting after the job
+        // starts does not miss the opening phase.
         ch.buffer.push(payload);
         if (ch.buffer.length > MAX_BUFFERED_LINES) ch.buffer.shift();
 

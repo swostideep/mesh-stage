@@ -8,8 +8,8 @@ function notFound(req, res) {
 }
 
 // Routes throw; this is the only place that decides what the client is told.
-// Internal messages used to be returned verbatim, which leaked stack detail,
-// driver errors and configuration state to anyone who could trigger a fault.
+// Internal messages stay in the log so a fault cannot leak stack detail,
+// driver errors or configuration state.
 function errorHandler(err, req, res, _next) {
     const status = err.status || 500;
     if (status >= 500) {

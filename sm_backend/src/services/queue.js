@@ -3,14 +3,10 @@
 const config = require('../config');
 const logger = require('../logger');
 
-// Two interchangeable queues behind one interface.
-//
-// BullMQ is used when REDIS_URL is present, which is what a deployed instance
-// wants: work survives a restart and can be spread over more than one worker.
-// Without Redis the API falls back to an in-process FIFO so the service still
-// runs from a fresh clone with no external dependency at all. Both honour the
-// same concurrency limit, which on a two-core host is what stops a second job
-// from halving the throughput of the first.
+// Two interchangeable queues behind one interface. BullMQ when REDIS_URL is
+// set, so work survives a restart; an in-process FIFO otherwise, so the service
+// runs from a fresh clone with no external dependency. Both honour the same
+// concurrency limit.
 
 function createInProcessQueue(handler) {
     const pending = [];
@@ -53,9 +49,8 @@ function createRedisQueue(handler) {
     const connection = new IORedis(config.redisUrl, {
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
-        // Certificate validation stays on. The previous configuration set
-        // rejectUnauthorized to false, which accepts any certificate and
-        // removes the protection the rediss:// scheme is there to provide.
+        // Certificate validation stays on; disabling it would defeat the
+        // point of the rediss:// scheme.
         ...(useTls ? { tls: {} } : {})
     });
 

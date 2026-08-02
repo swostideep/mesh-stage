@@ -1,10 +1,6 @@
-# Multi-stage build for Hugging Face Spaces.
-#
-# The previous single-stage image kept build-essential and the full
-# OpenCASCADE development packages in the shipped layer, which is roughly two
-# gigabytes of compilers and headers that never execute. Splitting the build
-# out means the runtime image carries only the engine binary, the shared
-# libraries it actually links against, and the Node dependencies.
+# Multi-stage build for Hugging Face Spaces. The runtime layer carries only the
+# engine binary, the shared libraries it links against and the Node
+# dependencies - not the ~2 GB of compilers and OCCT headers used to build it.
 
 # ---------------------------------------------------------------- build stage
 FROM node:20-bookworm AS engine-build
@@ -23,13 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 COPY sm_engine/ ./sm_engine/
 
-# CMake resolves the OpenCASCADE component names itself. Debian renamed the
-# toolkits between OCCT 7.5 and 7.8, so a hand-written list of -lTK flags
-# breaks the moment the base image moves; letting find_package do it does not.
-#
-# x86-64-v2 (SSE4.2/POPCNT, Nehalem and later) is a safe floor for cloud
-# hardware. -march=native would tune for whichever machine ran the build and
-# can fault with an illegal instruction on the machine that runs the container.
+# CMake resolves the OCCT toolkit names, which Debian renamed between 7.5 and
+# 7.8. x86-64-v2 is a safe floor for cloud hardware; -march=native would tune
+# for the build machine and can fault with an illegal instruction on the host
+# that actually runs the container.
 RUN cmake -S sm_engine -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DSM_ARCH_FLAGS="-march=x86-64-v2" \
@@ -37,8 +30,7 @@ RUN cmake -S sm_engine -B build \
     && ./build/sm_tests \
     && strip build/voronoi_mesh
 
-# Collect the engine's runtime shared-library closure so the final stage can
-# install just these instead of the whole OCCT development tree.
+# Collect the engine's runtime shared-library closure for the final stage.
 RUN mkdir -p /runtime-libs \
     && ldd build/voronoi_mesh \
        | awk '/=> \//{print $3}' \
@@ -60,8 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Spaces runs the container as uid 1000; writing as root leaves files the
-# application cannot manage afterwards.
+# Spaces runs as uid 1000; writing as root leaves files the app cannot manage.
 ENV NODE_ENV=production \
     PORT=7860 \
     SM_UPLOAD_DIR=/data/uploads \
@@ -85,8 +76,8 @@ USER node
 
 EXPOSE 7860
 
-# tini reaps the engine process. Without an init, a cancelled mesh leaves a
-# zombie behind on every stop, and PID 1 never forwards SIGTERM properly.
+# tini reaps the engine process: without an init, a cancelled mesh leaves a
+# zombie on every stop and PID 1 never forwards SIGTERM properly.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
