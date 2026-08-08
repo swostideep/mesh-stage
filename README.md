@@ -29,8 +29,9 @@ on how good it is.
 
 ## ▶ Watch it run
 
-**[Play the demo](DEMO_VIDEO_URL)** — upload a CAD file, mesh it, read the
-quality heatmap, flip between source geometry and generated mesh, export.
+**[▶ Play the demo](https://drive.google.com/file/d/1P1njYtygvKhtrT4nJ0znu6XsFHT6KPoZ/view?usp=sharing)**
+— upload a CAD file, mesh it, read the quality heatmap, flip between source
+geometry and generated mesh, cut it open, export.
 
 <br>
 
@@ -51,6 +52,50 @@ report — it updates the moment a mesh finishes.
 <img src="docs/workspace-dark.png" alt="The workspace in dark theme" width="100%">
 
 > Same mesh, dark theme. The viewport, panels and console all follow the theme.
+
+<br>
+
+## Fullscreen
+
+Every panel collapses. The three layout buttons in the toolbar hide the sidebar,
+the console and the model tree independently, so the viewport can take the whole
+window when you actually want to look at the mesh.
+
+<img src="docs/fullscreen.png" alt="The viewport in fullscreen" width="100%">
+
+> The diagnostic report stays pinned in the corner — the numbers should not
+> disappear just because the panels did.
+
+<br>
+
+## Cross-sections
+
+Meshing the outside is easy to check by eye. The X, Y and Z clipping planes cut
+the model open so the interior walls — bore surfaces, fillet undercuts, anything
+you would otherwise have to trust — can be inspected directly.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/section-x.png" alt="X cross-section" width="100%"></td>
+<td width="50%"><img src="docs/section-y.png" alt="Y cross-section" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>X plane</b> — cut across the bores</sub></td>
+<td align="center"><sub><b>Y plane</b> — sliced through the body</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/section-z.png" alt="Z cross-section" width="100%"></td>
+<td width="50%"><img src="docs/section-xyz.png" alt="All three planes at once" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Z plane</b> — opened from above</sub></td>
+<td align="center"><sub><b>All three</b> — corner removed entirely</sub></td>
+</tr>
+</table>
+
+> Any combination can be active at once. With all three enabled you are looking
+> at a single octant, which is the quickest way to confirm the mesh is sound all
+> the way through rather than only on the skin.
 
 <br>
 
