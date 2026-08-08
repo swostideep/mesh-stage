@@ -8,63 +8,216 @@ app_port: 7860
 pinned: false
 ---
 
-# SM Surface Mesher
+<div align="center">
 
-A surface meshing engine for STEP, IGES and BREP models. It reads a CAD file
-through OpenCASCADE, builds a constrained Delaunay triangulation of each face on
-an exact integer lattice, refines it against local surface curvature, and welds
-the faces into a single watertight mesh with a quality report.
+# Surface Mesher
 
-- **App:** https://mesh-stage.vercel.app
-- **API:** https://huggingface.co/spaces/swostideep/mesh-stage-API
+**A CAD surface meshing engine written from scratch in C++.**
+
+Drop in a STEP file, get back a watertight triangle mesh and an honest report on
+how good it is.
+
+[**Open the app**](https://mesh-stage.vercel.app) · [**API**](https://swostideep-mesh-stage-api.hf.space/health) · [**Engine source**](sm_engine)
+
+`C++17` · `OpenCASCADE` · `OpenMP` · `Node.js` · `Three.js`
+
+</div>
+
+<!-- IMAGE PENDING: save docs/landing.png then delete this comment wrapper
+<p align="center">
+  <img src="docs/landing.png" alt="Surface Mesher landing page" width="100%">
+</p>
+-->
+
+---
+
+## What it does
+
+Feed it a CAD model. It reads the boundary representation through OpenCASCADE,
+triangulates every face on an exact integer lattice, refines each one against
+local surface curvature, welds the faces into a single shell, and then measures
+what came out — element angles, aspect ratio, scaled Jacobian, watertightness,
+manifoldness.
+
+The measuring part is the point. Plenty of things will hand you a mesh. This one
+tells you whether you should trust it.
+
+<!-- IMAGE PENDING: save docs/workspace.png then delete this comment wrapper
+<p align="center">
+  <img src="docs/workspace.png" alt="The meshing workspace" width="100%">
+</p>
+-->
+
+## Watch it run
+
+**▶ [Watch the demo](docs/demo.mp4)** — upload, mesh, inspect the quality
+heatmap, toggle between source geometry and generated mesh, export.
 
 ---
 
 ## Measured results
 
-A 31-face solid (filleted block, three through bores, spherical boss) on 8
-threads. `Free edges` counts mesh edges used by a single triangle, so zero means
+A 31-face solid — filleted block, three through bores, spherical boss — on 8
+threads. `Free edges` counts mesh edges used by only one triangle, so zero means
 the shell is closed.
 
-| Density | Nodes  | Elements | Free edges | Non-manifold | Mean skew | Max skew | Wall time |
-|--------:|-------:|---------:|-----------:|-------------:|----------:|---------:|----------:|
-| 0.20    |  2,033 |    4,070 |          0 |            0 |      0.29 |     0.90 |     55 ms |
-| 0.12    |  4,413 |    8,830 |          0 |            0 |      0.29 |     0.89 |     27 ms |
-| 0.08    | 10,175 |   20,354 |          0 |            0 |      0.27 |     0.92 |     30 ms |
-| 0.05    | 20,014 |   40,032 |          0 |            0 |      0.26 |     0.95 |     39 ms |
-| 0.03    | 40,713 |   81,430 |          0 |            0 |      0.25 |     0.95 |     59 ms |
-| 0.02    | 70,643 |  141,290 |          0 |            0 |      0.24 |     0.96 |     92 ms |
+| Density | Nodes  | Elements | Free edges | Non-manifold | Mean skew | Wall time |
+|--------:|-------:|---------:|-----------:|-------------:|----------:|----------:|
+| 0.20    |  2,033 |    4,070 |          0 |            0 |      0.29 |     55 ms |
+| 0.12    |  4,413 |    8,830 |          0 |            0 |      0.29 |     27 ms |
+| 0.08    | 10,175 |   20,354 |          0 |            0 |      0.27 |     30 ms |
+| 0.05    | 20,014 |   40,032 |          0 |            0 |      0.26 |     39 ms |
+| 0.03    | 40,713 |   81,430 |          0 |            0 |      0.25 |     59 ms |
+| 0.02    | 70,643 |  141,290 |          0 |            0 |      0.24 |     92 ms |
 
-Core triangulator in isolation, meshing a 24-tooth gear profile with a bore:
+The core triangulator on its own, meshing a 24-tooth gear profile with a bore:
 
-| Target edge | Elements | Time    | Elements/s |
-|------------:|---------:|--------:|-----------:|
-|        4.00 |    7,899 |   27 ms |    297,649 |
-|        2.00 |   32,048 |   85 ms |    377,123 |
-|        1.00 |  128,669 |  451 ms |    285,039 |
-|        0.35 |  794,618 | 7,513 ms|    105,763 |
+| Target edge | Elements | Time     | Elements/s |
+|------------:|---------:|---------:|-----------:|
+|        4.00 |    7,899 |    23 ms |    349,330 |
+|        2.00 |   32,048 |    92 ms |    347,599 |
+|        1.00 |  128,669 |   500 ms |    257,373 |
+|        0.35 |  794,618 |  9,016 ms|     88,134 |
 
-Reproduce both with `sm_bench` and `sm_tests`; see *Building* below.
+Reproduce both with `sm_bench` and `sm_tests`. Nothing here is estimated.
+
+<!-- IMAGE PENDING: save docs/results.png then delete this comment wrapper
+<p align="center">
+  <img src="docs/results.png" alt="Measured results and pipeline" width="100%">
+</p>
+-->
 
 ### Against the previous core
 
-The original triangulator, timed on the same machine with the same polygon
-input, sustained about **2,700 elements/second** and could not exceed roughly
-2,500 elements because refinement was capped at 1,500 Steiner points. It also
-returned an empty mesh for a 16-gon without reporting an error. The current core
-sustains **285,000–410,000 elements/second** and has no comparable ceiling.
+The original triangulator, timed on the same machine with the same input,
+sustained about **2,700 elements/second** and could not exceed roughly 2,500
+elements, because refinement was capped at 1,500 Steiner points. It also
+returned an empty mesh for a 16-gon without reporting an error.
 
-The gap is algorithmic, not micro-optimisation:
+The current core sustains **250,000–350,000 elements/second** with no comparable
+ceiling. The gap is algorithmic, not micro-optimisation:
 
-| Operation             | Before                                        | After |
-|-----------------------|-----------------------------------------------|-------|
-| Point location        | Scan every triangle, including dead ones       | Visibility walk from the last insertion, Hilbert-ordered input |
-| Cavity construction   | Scan all triangles, then O(k²) edge dedup      | Depth-first from the containing triangle, proportional to the cavity |
-| Constraint insertion  | Split segments until the edge happens to appear| Retriangulate the crossed strip once |
-| Adjacency             | Rebuilt from a `std::map` every refinement step| Maintained incrementally as half-edge indices |
-| Edge flipping         | Restart the scan and rebuild after every flip  | Flip stack, only affected edges revisited |
-| Delaunay audit        | O(triangles × vertices) in-circle tests        | O(triangles), one test per shared edge |
-| Dead triangles        | Never reclaimed                                | Free list |
+| Operation | Before | After |
+|---|---|---|
+| Point location | Scan every triangle, including dead ones | Visibility walk from the last insertion, Hilbert-ordered input |
+| Cavity construction | Scan all triangles, then O(k²) edge dedup | Depth-first from the containing triangle, proportional to the cavity |
+| Constraint insertion | Split segments until the edge happens to appear | Retriangulate the crossed strip once |
+| Adjacency | Rebuilt from a `std::map` every refinement step | Maintained incrementally as half-edge indices |
+| Edge flipping | Restart the scan and rebuild after every flip | Flip stack, only affected edges revisited |
+| Delaunay audit | O(triangles × vertices) in-circle tests | O(triangles), one test per shared edge |
+| Dead triangles | Never reclaimed | Free list |
+
+---
+
+## Reading the quality report
+
+Every mesh comes back with the numbers a solver actually cares about.
+
+<!-- IMAGE PENDING: save docs/bad-mesh.png then delete this comment wrapper
+<p align="center">
+  <img src="docs/bad-mesh.png" alt="A poor quality imported STL" width="100%">
+</p>
+-->
+
+That is the same physical part as the clean example above, imported as an STL
+instead of a STEP. Minimum angle **0.1°**, aspect ratio **337**, scaled Jacobian
+**0.002**, and 1046 of 1056 elements flagged. The engine did not create that —
+it is faithfully reporting the tessellation the exporter produced, because an
+STL arrives already triangulated and there is no surface left to sample.
+
+Mesh the STEP version of the same part and the elements are an order of
+magnitude better. Being able to see that difference is the whole argument for
+measuring rather than assuming.
+
+| Metric | Meaning |
+|---|---|
+| **Min angle** | Smallest interior angle anywhere in the mesh. Below 20° starts to hurt solver conditioning. |
+| **Max aspect** | Verdict/CUBIT aspect ratio. 1.0 is equilateral, unbounded as elements flatten. |
+| **Min scaled Jacobian** | 1.0 equilateral, 0 degenerate, negative means inverted. |
+| **Free edges** | Edges used by one triangle. Non-zero means the shell has a hole. |
+| **Non-manifold edges** | Edges shared by three or more triangles. |
+| **Inconsistent edges** | Neighbouring triangles disagreeing about which side is outward. |
+
+### Why aspect ratio and not `maxEdge/minEdge`
+
+The obvious edge-ratio metric never looks at area, so a triangle with edges
+1, 1, 1.99 — which hides a 168° angle and is useless to a solver — still scores
+1.99 and passes. The Verdict form catches it. There is a test pinning exactly
+that case, asserting both that aspect ratio flags it and that the edge ratio
+would not have.
+
+### On the scaled Jacobian
+
+Worth being straight about: for a **triangle**, `det(J)` is `2·area` at every
+corner, so the scaled Jacobian reduces to `(2/√3)·sin(minAngle)`. Its magnitude
+tells you nothing that the minimum angle does not. It is reported for its
+*sign*, which detects inversion, and because solver pre-checks ask for it by
+name. Quads and tets are where the magnitude carries real information.
+
+That identity is asserted over a thousand random triangles in the test suite,
+which conveniently cross-checks two independently written code paths against
+each other.
+
+---
+
+## How it works
+
+**1 · Import and heal.** `ShapeUpgrade_UnifySameDomain`, `ShapeFix_Shape` and
+`BRepBuilderAPI_Sewing` normalise the incoming shape so every later stage sees
+one consistent shell.
+
+**2 · Size the edges once, globally.** Every model edge is sampled a single time
+against a chordal sag tolerance, then densified so no boundary segment exceeds
+the target size. Because both faces sharing an edge read the same sample list,
+their boundaries match node for node — which is what makes the final weld
+watertight instead of cracked.
+
+**3 · Triangulate faces in parallel.** Faces are independent, so they go to an
+OpenMP pool largest-first with dynamic scheduling; face cost varies by orders of
+magnitude and a static split leaves cores idle behind one straggler. Each face
+is meshed in a parameter space rescaled by local surface stretch, so element
+quality is optimised for the real 3D triangle rather than for the
+parametrisation's distortion of it.
+
+**4 · Weld and audit.** Face meshes merge through a spatial hash, then the result
+is checked for free edges, non-manifold edges, winding consistency and element
+quality before anything is written.
+
+<!-- IMAGE PENDING: save docs/wireframe.png then delete this comment wrapper
+<p align="center">
+  <img src="docs/wireframe.png" alt="Wireframe view of a meshed part" width="100%">
+</p>
+-->
+
+### Inside the triangulator
+
+- **Exact predicates.** Orientation and in-circle tests run in `__int128` on a
+  2²² integer lattice, with an overflow budget worked out in the header so no
+  input can exceed it. The predicates return the true sign, not a rounded one,
+  which means the triangulation cannot be corrupted by floating-point error.
+- **Insertion order.** Points go in as biased randomised rounds, Hilbert sorted
+  within each round, so consecutive insertions land near each other and the
+  location walk terminates in a couple of steps.
+- **Constraints.** Segments are inserted by retriangulating the strip of
+  triangles they cross (Anglada), not by subdividing until an edge appears.
+- **Refinement.** Ruppert refinement from a priority queue, worst element first.
+  Encroachment is answered from a uniform grid over segment diametral circles,
+  so the query is O(1) rather than a scan over every segment.
+- **Domain classification.** Inside and outside are separated by a crossing
+  parity flood — each constrained edge crossed toggles the state. A fill that
+  merely stops at the boundary cannot reach an interior hole, and would leave
+  every bore packed with elements.
+
+### The trade worth knowing about
+
+Face boundaries are **frozen** during refinement. Two adjacent faces are meshed
+independently, so if either were allowed to subdivide its share of their common
+edge, the two boundaries would stop matching and the weld would leave a crack.
+
+The cost is that the worst elements sit against those frozen boundaries. The
+interior holds around 30°, but a real model's global minimum angle lands closer
+to 7°. That is watertightness bought with some boundary-adjacent angle quality,
+and it is a deliberate choice rather than an accident.
 
 ---
 
@@ -72,194 +225,94 @@ The gap is algorithmic, not micro-optimisation:
 
 | Format | Extension | Treatment |
 |--------|-----------|-----------|
-| STEP   | `.step` `.stp` | Meshed. Curvature-adaptive, density applies. |
-| IGES   | `.iges` `.igs` | Meshed. Curvature-adaptive, density applies. |
-| BREP   | `.brep` `.brp` | Meshed. OpenCASCADE's native serialisation. |
-| STL    | `.stl`         | View only. Binary and ASCII. |
-| OBJ    | `.obj`         | View only. |
+| STEP | `.step` `.stp` | Meshed. Curvature-adaptive, density applies. |
+| IGES | `.iges` `.igs` | Meshed. Curvature-adaptive, density applies. |
+| BREP | `.brep` `.brp` | Meshed. OpenCASCADE's native serialisation. |
+| STL | `.stl` | View only. Binary and ASCII. |
+| OBJ | `.obj` | View only. |
 
-The split is not arbitrary. STEP, IGES and BREP carry boundary representation —
-trimmed surfaces with topology — which is the input the mesher actually
-consumes, so it can sample them at whatever density is asked for.
+STEP, IGES and BREP carry boundary representation — trimmed surfaces with
+topology — which is what the mesher consumes, so it can sample them at any
+requested density.
 
-STL and OBJ are already triangulated. The surface the mesher would sample no
-longer exists, so there is nothing to refine and the density setting has no
-effect on them. They are still worth accepting: they get welded (STL repeats
-every shared vertex once per touching triangle, so without welding the mesh has
-no connectivity at all) and then run through the same audit, which answers the
-question people usually have about a downloaded STL — is it watertight, is it
-manifold, how bad are the elements. Nothing is silently rewritten; the geometry
-that comes out is the geometry that went in.
+STL and OBJ arrive already triangulated. The surface the mesher would sample is
+gone, so density has nothing to act on and they are passed through as authored.
+They are still worth accepting: welding them (an STL repeats every shared vertex
+once per touching triangle, so the raw file has no connectivity at all) and
+running the same audit answers the question people usually have about a
+downloaded STL — is it watertight, is it manifold, how bad are the elements.
 
-### What is not supported, and why
-
-**SLDPRT, Parasolid (`.x_t`), ACIS (`.sat`)** — closed formats. Reading them
-needs a commercial kernel (HOOPS Exchange, CAD Exchanger, Datakit); there is no
-free or legal path, and the licences generally forbid redistribution in a hosted
-application. This is a licensing wall, not a missing feature. Every one of these
-CAD systems exports STEP natively, which is the intended route.
-
-**`.blend`** — Blender is not a B-rep modeller. A `.blend` holds polygons, not
-trimmed NURBS with topology, so there is nothing for this engine to mesh.
-Exporting OBJ or STL from Blender and using the view-only path is the equivalent
-operation, and it already works.
-
-## How it works
-
-**1. Import and heal.** `ShapeUpgrade_UnifySameDomain`, `ShapeFix_Shape` and
-`BRepBuilderAPI_Sewing` normalise the incoming shape so later stages see one
-consistent shell.
-
-**2. Size the edges once.** Every model edge is sampled a single time against a
-chordal sag tolerance, then densified so no boundary segment exceeds the target
-size. Because both faces sharing an edge read the same sample list, their
-boundaries match node for node.
-
-**3. Triangulate each face.** Faces are independent, so they are handed to an
-OpenMP pool largest-first with dynamic scheduling — face cost varies by orders
-of magnitude, and a static split leaves cores waiting on one straggler. Each
-face is meshed in a parameter space rescaled by the local surface stretch, so
-element quality is optimised for the 3D triangle rather than for the
-parametrisation's distortion of it.
-
-**4. Weld and audit.** Face meshes merge through a spatial hash, then the result
-is checked for free edges, non-manifold edges, inverted elements and skewness
-before anything is written.
-
-### Inside the triangulator
-
-- **Exact predicates.** Orientation and in-circle tests run in `__int128` on a
-  2²² integer lattice. Magnitudes are bounded so no input can overflow them,
-  which means the predicates return the true sign rather than a rounded one.
-- **Insertion order.** Points are inserted in biased randomised rounds, Hilbert
-  sorted within each round. Consecutive insertions land near each other, so the
-  location walk terminates in a few steps.
-- **Constraints.** Segments are inserted by retriangulating the strip of
-  triangles they cross (Anglada), not by subdividing until an edge appears.
-- **Refinement.** Ruppert refinement driven by a priority queue, worst element
-  first. Encroachment is answered from a uniform grid over segment diametral
-  circles, so the query is O(1) rather than a scan of every segment.
-- **Domain classification.** Inside and outside are separated by a crossing
-  parity flood: each constrained edge crossed toggles the state. A fill that
-  merely stops at the boundary cannot reach an interior hole, and would leave
-  bores filled with elements.
+**Not supported:** SLDPRT, Parasolid and ACIS are closed formats needing a
+commercial kernel, which is a licensing wall rather than a missing feature —
+every one of those CAD systems exports STEP natively. `.blend` holds polygons
+rather than trimmed NURBS, so there is nothing there to mesh; export OBJ or STL
+and use the view-only path.
 
 ---
 
 ## Building
 
-The core library has no OpenCASCADE dependency, so it builds and its tests run
-with nothing but a compiler and CMake. The CAD front end is added only if OCCT
-is found.
+The core library has no OpenCASCADE dependency, so it and its tests build on a
+machine with nothing but a compiler.
 
 ```bash
-# macOS
-brew install cmake libomp opencascade
-
-# Debian / Ubuntu
-sudo apt install build-essential cmake libocct-data-exchange-dev \
-                 libocct-foundation-dev libocct-modeling-algorithms-dev \
-                 libocct-modeling-data-dev libocct-ocaf-dev
+cmake -S sm_engine -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/sm_tests      # 97 invariant checks
+./build/sm_bench 24   # throughput sweep
 ```
+
+With OpenCASCADE present, the CAD front end builds too:
 
 ```bash
-cmake -S sm_engine -B sm_engine/build -DCMAKE_BUILD_TYPE=Release
-cmake --build sm_engine/build -j
-
-./sm_engine/build/sm_tests      # 65 invariant checks
-./sm_engine/build/sm_bench      # throughput sweep
-
-# Mesh a model directly
-./sm_engine/build/voronoi_mesh part.step 0.05 out.obj
-./sm_engine/build/voronoi_mesh scan.stl  0.05 out.obj   # view-only passthrough
+./build/voronoi_mesh part.step 0.05 out.obj
+./build/voronoi_mesh scan.stl  0.05 out.obj   # view-only passthrough
 ```
 
-For a B-rep input, `voronoi_mesh` writes two files: the mesh, and
-`out_geometry.obj` — a reference tessellation of the healed CAD shape that the
-viewer uses for its geometry/mesh toggle. A view-only input produces just the
-mesh, and the viewer's Geometry button stays disabled because there is no
-separate source geometry to show.
+Exit status is `0` on success, `1` when the file cannot be read or produces no
+elements, `2` for a bad invocation.
 
-Exit status is `0` on success, `1` when the file cannot be read or yields no
-elements, and `2` for a bad invocation or an unsupported extension.
-
-### Running the API locally
-
-With no configuration the server uses an in-memory store and an in-process
-queue, so a fresh clone runs end to end without MongoDB or Redis:
+### Running the whole thing locally
 
 ```bash
-cd sm_backend
-npm install
-mkdir -p engine && cp ../sm_engine/build/voronoi_mesh engine/
-npm start                       # http://localhost:7860/health
+cd sm_backend && npm install && node server.js     # API on :7860
+cd sm_frontend && python3 -m http.server 5173      # UI  on :5173
 ```
 
-Set `MONGODB_URI` and `REDIS_URL` to switch to persistent storage and a durable
-queue; see `sm_backend/.env.example`. Both are required when `NODE_ENV=production`.
-
-Serve the frontend from `sm_frontend/` on any static server. When loaded from
-localhost it targets `http://localhost:7860` automatically; otherwise set
-`window.SM_API_BASE`.
+No configuration needed — without `MONGODB_URI` it uses an in-memory store and
+without `REDIS_URL` an in-process queue, so a fresh clone runs as-is. Deployment
+notes are in [DEPLOY.md](DEPLOY.md).
 
 ---
 
-## Repository layout
+## Testing
+
+`sm_tests` asserts structural invariants rather than golden output, so the tests
+keep their meaning as the refinement heuristics are tuned:
+
+- no inverted or zero-area elements
+- every edge in at most two triangles, and traversed once in each direction
+- the mesh boundary is exactly the input boundary
+- Euler characteristic matches a disc or an annulus as appropriate
+- metric anchors: equilateral scores exactly 1.0, closed forms hold to 1e-12
+- metrics are scale- and permutation-invariant, and the lattice and 3D paths
+  agree
+
+`sm_bench` exits non-zero if it detects inverted elements, Delaunay violations
+or a degenerate scaled Jacobian. It gates on correctness only — a wall-clock
+threshold on shared hardware just teaches everyone to ignore the result.
+
+---
+
+## Layout
 
 ```
-sm_engine/
-  include/sm/       predicates, geometry, half-edge mesh, public API
-  src/              triangulator, refinement, smoothing and flips
-  cad/              OpenCASCADE import, face meshing, welding, OBJ output
-  tests/            invariant suite
-  bench/            throughput benchmark
-sm_backend/
-  src/config.js     one place for every tunable
-  src/db/           MongoDB store and in-memory fallback
-  src/routes/       auth and job endpoints
-  src/services/     engine process, queue, progress streams, storage
-sm_frontend/
-  index.html        landing page
-  auth.html         sign in and registration
-  dashboard.html    3D meshing workspace
-  js/api.js         API base URL and fetch helpers
+sm_engine/     C++ meshing engine
+  include/sm/  predicates, geometry, half-edge mesh, public API
+  src/         triangulator, refinement, smoothing and flips, audit
+  cad/         OpenCASCADE front end and CLI
+  tests/       invariant suite
+  bench/       throughput benchmark
+sm_backend/    Node/Express job API, queue, storage, auth
+sm_frontend/   Three.js workspace and landing page
 ```
-
----
-
-## Resource behaviour
-
-The API targets a container with two vCPUs and an ephemeral disk.
-
-- One job at a time, two OpenMP threads. More of either oversubscribes the
-  container and slows both jobs without finishing either sooner.
-- Job submission returns `202` with a job id immediately. Progress arrives on a
-  per-job event stream. Holding the HTTP request open until the engine finished
-  meant any long mesh died against the platform's proxy timeout even though the
-  job itself completed.
-- Uploads are capped, sniffed for a real signature of the format they claim to
-  be, and swept after a retention window so a long-running container cannot fill
-  its own disk.
-- The runtime image contains the engine binary, its shared-library closure and
-  production Node modules — not the compilers and OCCT headers used to build it.
-
----
-
-## Known limitations
-
-- **Maximum skewness sits around 0.95** on elements adjacent to face boundaries.
-  Boundaries are frozen during refinement, which is what guarantees neighbouring
-  faces weld watertight; the cost is that the worst boundary-adjacent elements
-  cannot be improved by flipping. Mean skewness is 0.24. Closing this gap needs
-  boundary-layer smoothing that moves nodes along the CAD edge.
-- **Surface meshing only.** There is no volume mesher; output is a triangulated
-  shell for surface FEA, visualisation or as input to a tetrahedral mesher.
-- **Single-container queue.** Horizontal scaling would need the rate-limit
-  counters and progress streams moved into Redis.
-- Assemblies are meshed as one shell; per-body separation is not exposed.
-
----
-
-## Licence
-
-MIT.

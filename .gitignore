@@ -32,3 +32,6 @@ sm_backend/engine/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Source screen recording; the compressed docs/demo.mp4 is what ships
+demo.mov
