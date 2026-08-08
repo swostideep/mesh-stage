@@ -69,22 +69,35 @@ the bore is denser than the flat around it, without anyone asking for it.
 
 ## The part where it tells you the truth
 
-This is the same physical part, meshed twice. Left is what the engine produces
-from the **STEP** file. Right is what you get when you feed it the **STL** the
-same CAD system exported.
+Same physical part, twice. First the **STEP** file, meshed by the engine:
 
-<img src="docs/bad-mesh.png" alt="A poor quality imported STL" width="100%">
+<img src="docs/good-mesh.png" alt="The keyring meshed from STEP" width="100%">
+
+> 15,068 elements, almost entirely blue and green. Minimum angle 1.8°, aspect
+> ratio 37.5.
+
+Now the **STL** the same CAD system exported, of the same part:
+
+<img src="docs/bad-mesh.png" alt="The same keyring imported as STL" width="100%">
 
 > Minimum angle **0.1°**, aspect ratio **338**, scaled Jacobian **0.002**, and
 > **1046 of 1056** elements flagged. Red is a degenerate sliver.
->
-> The engine did not create this. An STL arrives already triangulated, so there
-> is no surface left to sample and nothing to refine — it is faithfully
-> reporting the tessellation the exporter produced. Mesh the STEP version of
-> the same part and the elements come out an order of magnitude better.
->
-> Plenty of tools will hand you a mesh. Being able to see *this* difference is
-> the entire argument for measuring rather than assuming.
+
+|  | From STEP | From STL |
+|---|---:|---:|
+| Elements | 15,068 | 1,056 |
+| Min angle | 1.8° | **0.1°** |
+| Max aspect ratio | 37.5 | **338** |
+| Min scaled Jacobian | 0.036 | **0.002** |
+| Flagged elements | 280 (1.9%) | **1046 (99%)** |
+
+The engine did not create the bad one. An STL arrives already triangulated, so
+there is no surface left to sample and nothing to refine — it is faithfully
+reporting the tessellation the exporter produced, which is exactly what you
+would have unknowingly fed to a solver.
+
+Plenty of tools will hand you a mesh. Being able to see *this* difference is the
+entire argument for measuring rather than assuming.
 
 <br>
 
