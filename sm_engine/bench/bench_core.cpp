@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
     std::printf("%10s %10s %10s %12s %10s %10s %10s\n", "target", "nodes", "elements",
                 "ms", "elem/s", "minAngle", "maxSkew");
 
+    bool corrupt = false;
     const double targets[] = {8.0, 4.0, 2.0, 1.0, 0.5, 0.35};
     for (double t : targets) {
         sm::MeshRequest r = gearProfile(teeth, t);
@@ -76,10 +77,17 @@ int main(int argc, char** argv) {
         std::printf("%10.2f %10zu %10d %12.1f %10.0f %10.2f %10.3f\n", t, m.points.size(),
                     m.stats.triangles, ms, rate, m.stats.minAngle, m.stats.maxSkewness);
 
-        if (m.stats.invertedCount != 0 || m.stats.delaunayViolations != 0) {
-            std::printf("  WARNING inverted=%d delaunayViolations=%d\n",
-                        m.stats.invertedCount, m.stats.delaunayViolations);
+        if (m.stats.invertedCount != 0 || m.stats.delaunayViolations != 0 ||
+            m.stats.minScaledJacobian <= 0.0) {
+            std::printf("  FAILED inverted=%d delaunayViolations=%d minScaledJacobian=%.4f\n",
+                        m.stats.invertedCount, m.stats.delaunayViolations,
+                        m.stats.minScaledJacobian);
+            corrupt = true;
         }
     }
-    return 0;
+
+    // Only correctness gates the exit code. A wall-clock threshold would flake
+    // on shared CI and teach everyone to ignore the result.
+    if (corrupt) std::printf("\nmesh invariants violated\n");
+    return corrupt ? 1 : 0;
 }
