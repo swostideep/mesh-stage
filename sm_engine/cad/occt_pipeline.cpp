@@ -208,6 +208,15 @@ FaceResult meshFace(const FaceWork& work, const CadOptions& opts, const Sizing& 
         result.nodes.push_back({g.X(), g.Y(), g.Z()});
     }
     result.triangles = mesh.triangles;
+
+    // The triangulator winds counter-clockwise in parameter space. On a
+    // reversed face the parametric normal points into the solid, so that
+    // winding has to be flipped or this face disagrees with its neighbours
+    // about which side is out.
+    if (work.face.Orientation() == TopAbs_REVERSED) {
+        for (auto& t : result.triangles) std::swap(t[1], t[2]);
+    }
+
     result.ok = true;
     return result;
 }
@@ -471,33 +480,68 @@ void auditSurfaceMesh(const SurfaceMesh& mesh, CadReport* report) {
     report->elements = int(mesh.triangles.size());
 
     double skewSum = 0.0;
+    double minAngle = 180.0;
+    double maxAspect = 1.0;
+    double minSJ = 1.0;
     report->maxSkewness = 0.0;
     report->highSkewCount = 0;
+    report->highAspectCount = 0;
+
     for (const auto& t : mesh.triangles) {
-        const double s = skewness3D(mesh.nodes[size_t(t[0])], mesh.nodes[size_t(t[1])],
-                                    mesh.nodes[size_t(t[2])]);
+        const TriangleMetrics m = measure3D(mesh.nodes[size_t(t[0])], mesh.nodes[size_t(t[1])],
+                                            mesh.nodes[size_t(t[2])]);
+        const double s = skewnessFromAngles(m.minAngle, m.maxAngle);
+
         skewSum += s;
         report->maxSkewness = std::max(report->maxSkewness, s);
         if (s > 0.5) ++report->highSkewCount;
+        if (m.aspectRatio > 10.0) ++report->highAspectCount;
+
+        minAngle = std::min(minAngle, m.minAngle);
+        maxAspect = std::max(maxAspect, m.aspectRatio);
+        minSJ = std::min(minSJ, m.scaledJacobian);
     }
-    report->meanSkewness =
-        mesh.triangles.empty() ? 0.0 : skewSum / double(mesh.triangles.size());
+
+    const bool empty = mesh.triangles.empty();
+    report->meanSkewness = empty ? 0.0 : skewSum / double(mesh.triangles.size());
+    report->minAngle = empty ? 0.0 : minAngle;
+    report->maxAspectRatio = empty ? 0.0 : maxAspect;
+    report->minScaledJacobian = empty ? 0.0 : minSJ;
     checkWatertight(mesh, report);
 }
 
 void checkWatertight(const SurfaceMesh& mesh, CadReport* report) {
-    std::unordered_map<int64_t, int> uses;
+    // Direction is tracked as well as count: on a consistently wound surface an
+    // interior edge is walked once each way, so a 2-0 or 0-2 split means the two
+    // triangles sharing it disagree about the outward side.
+    struct EdgeUse {
+        int forward = 0;
+        int backward = 0;
+    };
+    std::unordered_map<int64_t, EdgeUse> uses;
     uses.reserve(mesh.triangles.size() * 3);
+
     for (const auto& t : mesh.triangles) {
         for (int i = 0; i < 3; ++i) {
             int32_t a = t[size_t(i)], b = t[size_t((i + 1) % 3)];
-            if (a > b) std::swap(a, b);
-            ++uses[(int64_t(a) << 32) | uint32_t(b)];
+            const bool flipped = a > b;
+            if (flipped) std::swap(a, b);
+            EdgeUse& use = uses[(int64_t(a) << 32) | uint32_t(b)];
+            if (flipped) {
+                ++use.backward;
+            } else {
+                ++use.forward;
+            }
         }
     }
+
     for (const auto& kv : uses) {
-        if (kv.second == 1) ++report->freeEdges;
-        if (kv.second > 2) ++report->nonManifoldEdges;
+        const int total = kv.second.forward + kv.second.backward;
+        if (total == 1) ++report->freeEdges;
+        if (total > 2) ++report->nonManifoldEdges;
+        if (total == 2 && (kv.second.forward != 1 || kv.second.backward != 1)) {
+            ++report->inconsistentEdges;
+        }
     }
 }
 

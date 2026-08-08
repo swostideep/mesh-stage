@@ -57,11 +57,19 @@ struct CadReport {
     int surfaceFlips = 0;
     int freeEdges = 0;        // boundary edges: non-zero means not watertight
     int nonManifoldEdges = 0;
+    // Shared edges traversed the same way by both triangles, which means the
+    // two disagree about which side is out. Counted per edge rather than per
+    // triangle: a whole flipped component is indistinguishable from its
+    // complement being flipped, so "how many triangles are wrong" has no
+    // answer without picking a side arbitrarily.
+    int inconsistentEdges = 0;
     double maxSkewness = 0.0;
     double meanSkewness = 0.0;
     double minAngle = 180.0;
+    double maxAspectRatio = 1.0;
+    double minScaledJacobian = 1.0;
     int highSkewCount = 0;
-    int invertedCount = 0;
+    int highAspectCount = 0;
     double loadMs = 0.0;
     double healMs = 0.0;
     double discretiseMs = 0.0;
