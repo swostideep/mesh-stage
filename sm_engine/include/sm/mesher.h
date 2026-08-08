@@ -53,6 +53,8 @@ struct MeshStats {
     double maxSkewness = 0.0;
     double meanSkewness = 0.0;
     double minAngle = 180.0;
+    double maxAspectRatio = 1.0;
+    double minScaledJacobian = 1.0;
     int highSkewCount = 0;
     int invertedCount = 0;
     int delaunayViolations = 0;

@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <map>
 #include <set>
@@ -98,6 +99,9 @@ void checkStructure(const sm::MeshResult& m, const std::string& label,
               std::to_string(2 - expectedLoops) + ")");
 
     check(m.stats.invertedCount == 0, label + ": audit reports no inversions");
+    // Stricter than the inversion count above: this also catches zero-area.
+    check(m.stats.minScaledJacobian > 0.0, label + ": no degenerate elements");
+    check(m.stats.maxAspectRatio < 1e5, label + ": aspect ratio stays bounded");
 }
 
 sm::MeshRequest squareRequest(double edgeTarget) {
@@ -245,6 +249,127 @@ void testSegmentsPreserved() {
     check(outside == 0, "square: no vertex escapes the domain");
 }
 
+// Small LCG so the random sweeps below are reproducible without pulling in
+// <random>, whose generators are not required to match across libraries.
+struct Lcg {
+    uint64_t s = 0x9e3779b97f4a7c15ull;
+    double next(double lo, double hi) {
+        s = s * 6364136223846793005ull + 1442695040888963407ull;
+        return lo + (hi - lo) * double((s >> 11) & ((1ull << 53) - 1)) / double(1ull << 53);
+    }
+};
+
+void testShapeMetrics() {
+    std::printf("[case] aspect ratio and scaled Jacobian\n");
+
+    // Closed forms. Equilateral is the optimum of both metrics.
+    const sm::TriangleMetrics eq =
+        sm::measure3D({0, 0, 0}, {1, 0, 0}, {0.5, sm::kSqrt3 / 2.0, 0});
+    check(std::fabs(eq.aspectRatio - 1.0) < 1e-12, "equilateral: aspect ratio is 1");
+    check(std::fabs(eq.scaledJacobian - 1.0) < 1e-12, "equilateral: scaled Jacobian is 1");
+
+    const sm::TriangleMetrics ri = sm::measure3D({0, 0, 0}, {1, 0, 0}, {0, 1, 0});
+    check(std::fabs(ri.aspectRatio - 1.3938468501) < 1e-9, "right isoceles: aspect ratio");
+    check(std::fabs(ri.scaledJacobian - 0.8164965809) < 1e-9, "right isoceles: scaled Jacobian");
+
+    // The case that justifies choosing this aspect ratio over maxEdge/minEdge:
+    // a cap sliver with a 177 degree angle that the edge ratio calls healthy.
+    const sm::TriangleMetrics cap = sm::measure3D({0, 0, 0}, {100, 0, 0}, {50, 1, 0});
+    check(cap.aspectRatio > 57.0, "cap sliver: aspect ratio flags it");
+    check(cap.scaledJacobian < 0.024, "cap sliver: scaled Jacobian flags it");
+    check(cap.maxEdge / cap.minEdge < 2.01,
+          "cap sliver: edge ratio would not have flagged it");
+
+    // The lattice cannot hold an exact equilateral, but both metrics are
+    // stationary at the optimum so the error stays second order.
+    const sm::TriangleMetrics latEq =
+        sm::measure(sm::IPoint{0, 0}, sm::IPoint{1000000, 0}, sm::IPoint{500000, 866025});
+    check(std::fabs(latEq.aspectRatio - 1.0) < 1e-6, "lattice equilateral: aspect ratio");
+    check(std::fabs(latEq.scaledJacobian - 1.0) < 1e-6, "lattice equilateral: scaled Jacobian");
+
+    // Degenerate input must clamp rather than produce inf or NaN, because the
+    // report is scraped out of stdout by a numeric regex downstream.
+    const sm::TriangleMetrics flat = sm::measure3D({0, 0, 0}, {1, 0, 0}, {2, 0, 0});
+    check(flat.scaledJacobian == 0.0, "collinear: scaled Jacobian is zero");
+    check(flat.aspectRatio == sm::kMaxAspectRatio, "collinear: aspect ratio clamps");
+    check(!std::isnan(flat.aspectRatio) && !std::isnan(flat.scaledJacobian),
+          "collinear: no NaN");
+
+    Lcg rng;
+    double identityErr = 0.0, liftErr = 0.0, permErr = 0.0, scaleErr = 0.0;
+    int belowFloor = 0, signMismatch = 0;
+
+    for (int i = 0; i < 1000; ++i) {
+        const double ax = rng.next(-50, 50), ay = rng.next(-50, 50);
+        const double bx = rng.next(-50, 50), by = rng.next(-50, 50);
+        const double cx = rng.next(-50, 50), cy = rng.next(-50, 50);
+        const sm::TriangleMetrics m = sm::measure3D({ax, ay, 0}, {bx, by, 0}, {cx, cy, 0});
+        if (!(m.area > 1e-9)) continue;
+
+        if (m.aspectRatio < 1.0 - 1e-12) ++belowFloor;
+
+        // For a triangle det(J) is 2*area at every corner, so the minimum
+        // scaled value always lands on the smallest angle.
+        const double pred = (2.0 / sm::kSqrt3) * std::sin(m.minAngle * M_PI / 180.0);
+        identityErr = std::max(identityErr, std::fabs(m.scaledJacobian - pred));
+
+        // Scale invariance catches a term that was never normalised.
+        const sm::TriangleMetrics s = sm::measure3D(
+            {ax * 1000, ay * 1000, 0}, {bx * 1000, by * 1000, 0}, {cx * 1000, cy * 1000, 0});
+        scaleErr = std::max(scaleErr, std::fabs(m.aspectRatio - s.aspectRatio));
+        scaleErr = std::max(scaleErr, std::fabs(m.scaledJacobian - s.scaledJacobian));
+
+        // Vertex order must not matter for the unsigned magnitudes.
+        const sm::TriangleMetrics p = sm::measure3D({cx, cy, 0}, {ax, ay, 0}, {bx, by, 0});
+        permErr = std::max(permErr, std::fabs(m.aspectRatio - p.aspectRatio));
+        permErr = std::max(permErr, std::fabs(m.scaledJacobian - p.scaledJacobian));
+
+        // The lattice and 3D paths must agree on a triangle lying in z = 0.
+        const auto q = [](double v) { return int64_t(std::llround(v * 4096.0)); };
+        const sm::TriangleMetrics l = sm::measure(
+            sm::IPoint{q(ax), q(ay)}, sm::IPoint{q(bx), q(by)}, sm::IPoint{q(cx), q(cy)});
+        const sm::TriangleMetrics l3 = sm::measure3D({double(q(ax)), double(q(ay)), 0},
+                                                     {double(q(bx)), double(q(by)), 0},
+                                                     {double(q(cx)), double(q(cy)), 0});
+        liftErr = std::max(liftErr, std::fabs(l.aspectRatio - l3.aspectRatio));
+        liftErr = std::max(liftErr, std::fabs(std::fabs(l.scaledJacobian) - l3.scaledJacobian));
+
+        // The sign is taken from the exact predicate, so this holds without
+        // tolerance.
+        const bool negative = l.scaledJacobian < 0.0;
+        const bool clockwise = sm::orient2d(sm::IPoint{q(ax), q(ay)}, sm::IPoint{q(bx), q(by)},
+                                            sm::IPoint{q(cx), q(cy)}) < 0;
+        if (negative != clockwise) ++signMismatch;
+    }
+
+    check(belowFloor == 0, "aspect ratio never drops below 1");
+    check(identityErr < 1e-9,
+          "scaled Jacobian matches (2/sqrt3)*sin(minAngle), err " + std::to_string(identityErr));
+    check(scaleErr < 1e-9, "metrics are scale invariant, err " + std::to_string(scaleErr));
+    check(permErr < 1e-9, "metrics ignore vertex order, err " + std::to_string(permErr));
+    check(liftErr < 1e-6, "lattice and 3D paths agree, err " + std::to_string(liftErr));
+    check(signMismatch == 0, "scaled Jacobian sign tracks orient2d exactly");
+
+    // Degenerating a triangle must move both metrics the right way. Bounded at
+    // h = 86 because past the equilateral height (86.6) it turns into a needle
+    // and the aspect ratio climbs again.
+    const double heights[] = {86.0, 80.0, 60.0, 40.0, 20.0, 10.0, 5.0, 2.0, 1.0};
+    bool arRises = true, sjFalls = true;
+    sm::TriangleMetrics prev = sm::measure3D({0, 0, 0}, {100, 0, 0}, {50, heights[0], 0});
+    for (int i = 1; i < 9; ++i) {
+        const sm::TriangleMetrics cur =
+            sm::measure3D({0, 0, 0}, {100, 0, 0}, {50, heights[i], 0});
+        if (!(cur.aspectRatio > prev.aspectRatio)) arRises = false;
+        if (!(cur.scaledJacobian < prev.scaledJacobian)) sjFalls = false;
+        prev = cur;
+    }
+    check(arRises, "aspect ratio rises monotonically as the element flattens");
+    check(sjFalls, "scaled Jacobian falls monotonically as the element flattens");
+
+    std::printf("        equilateral 1.000/1.000, right-iso %.4f/%.4f, cap sliver %.1f/%.4f\n",
+                ri.aspectRatio, ri.scaledJacobian, cap.aspectRatio, cap.scaledJacobian);
+}
+
 void testScaling() {
     std::printf("[case] scaling behaviour\n");
     const double targets[] = {12.0, 6.0, 3.0, 1.5};
@@ -262,6 +387,7 @@ void testScaling() {
 int main() {
     std::printf("Surface Mesher core validation\n");
     std::printf("==============================\n");
+    testShapeMetrics();
     testSquare();
     testLShape();
     testAnnulus();

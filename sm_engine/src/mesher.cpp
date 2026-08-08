@@ -19,6 +19,8 @@ MeshStats auditMesh(const TriMesh& mesh) {
     double maxSkew = 0.0;
     double skewSum = 0.0;
     double minAngle = 180.0;
+    double maxAspect = 1.0;
+    double minSJ = 1.0;
     int highSkew = 0;
     int inverted = 0;
     int count = 0;
@@ -27,8 +29,9 @@ MeshStats auditMesh(const TriMesh& mesh) {
     const int32_t triCount = mesh.triangleCount();
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(max : maxSkew) \
-    reduction(+ : skewSum, highSkew, inverted, count, violations) reduction(min : minAngle)
+#pragma omp parallel for schedule(static) reduction(max : maxSkew, maxAspect) \
+    reduction(+ : skewSum, highSkew, inverted, count, violations)             \
+    reduction(min : minAngle, minSJ)
 #endif
     for (int32_t t = 0; t < triCount; ++t) {
         if (!mesh.interior(t)) continue;
@@ -45,6 +48,8 @@ MeshStats auditMesh(const TriMesh& mesh) {
         if (skew > maxSkew) maxSkew = skew;
         if (skew > 0.5) ++highSkew;
         if (m.minAngle < minAngle) minAngle = m.minAngle;
+        if (m.aspectRatio > maxAspect) maxAspect = m.aspectRatio;
+        if (m.scaledJacobian < minSJ) minSJ = m.scaledJacobian;
         if (orient2d(a, b, c) <= 0) ++inverted;
 
         // Constrained Delaunay check: only the vertex opposite each shared,
@@ -65,6 +70,8 @@ MeshStats auditMesh(const TriMesh& mesh) {
     stats.maxSkewness = maxSkew;
     stats.meanSkewness = count > 0 ? skewSum / count : 0.0;
     stats.minAngle = count > 0 ? minAngle : 0.0;
+    stats.maxAspectRatio = count > 0 ? maxAspect : 0.0;
+    stats.minScaledJacobian = count > 0 ? minSJ : 0.0;
     stats.highSkewCount = highSkew;
     stats.invertedCount = inverted;
     stats.delaunayViolations = violations;
