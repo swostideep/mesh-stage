@@ -32,7 +32,12 @@ function createJobRunner(store) {
                 maxSkewness: stats.maxSkewness ?? null,
                 meanSkewness: stats.meanSkewness ?? null,
                 highSkewCount: stats.highSkewCount ?? 0,
+                minAngle: stats.minAngle ?? null,
+                maxAspectRatio: stats.maxAspectRatio ?? null,
+                minScaledJacobian: stats.minScaledJacobian ?? null,
+                highAspectCount: stats.highAspectCount ?? 0,
                 freeEdges: stats.freeEdges ?? null,
+                inconsistentEdges: stats.inconsistentEdges ?? null,
                 previewKey: hasPreview ? previewKey : null,
                 completedAt: new Date()
             });

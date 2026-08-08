@@ -270,6 +270,9 @@
                             <div class="metric-row"><span>Nodes</span> <span class="metric-val" id="stat-nodes">--</span></div>
                             <div class="metric-row"><span>Elements</span> <span class="metric-val" id="stat-tri">--</span></div>
                             <div class="metric-row"><span>Max Skew</span> <span class="metric-val" id="stat-skew">--</span></div>
+                            <div class="metric-row"><span>Min Angle</span> <span class="metric-val" id="stat-minangle">--</span></div>
+                            <div class="metric-row"><span>Max Aspect</span> <span class="metric-val" id="stat-aspect">--</span></div>
+                            <div class="metric-row"><span>Min Scaled Jac</span> <span class="metric-val" id="stat-sj">--</span></div>
                             <div class="metric-row" style="border: none;"><span>Bad Elements</span> <span class="metric-val" id="stat-bad">--</span></div>
                         </div>
                     </div>
@@ -642,6 +645,21 @@
             currentModel.children.forEach(c => { c.visible = isChecked; });
         };
 
+        // Renders one diagnostic value, or a dash when the engine did not
+        // report it - which is the case for jobs meshed before these metrics
+        // existed.
+        function setMetric(id, value, format, colour) {
+            const el = document.getElementById(id);
+            if (value == null || !Number.isFinite(Number(value))) {
+                el.innerText = '--';
+                el.style.color = 'var(--text-main)';
+                return;
+            }
+            const v = Number(value);
+            el.innerText = format(v);
+            el.style.color = colour(v) || 'var(--text-main)';
+        }
+
         function showJob(job) {
             loadedJob = job;
             document.getElementById('stat-tri').innerText = job.triangles ?? '--';
@@ -651,6 +669,19 @@
             const badElem = document.getElementById('stat-bad');
             badElem.innerText = job.highSkewCount ?? '--';
             badElem.style.color = Number(job.highSkewCount) > 0 ? 'var(--error)' : 'var(--text-main)';
+
+            // Thresholds follow the usual FEA reading: below 20 degrees and
+            // above an aspect ratio of 10 are the points solvers start to
+            // struggle, so they are called out rather than just displayed.
+            setMetric('stat-minangle', job.minAngle, (v) => v.toFixed(1) + '°',
+                      (v) => (v < 20 ? 'var(--error)' : v < 30 ? 'var(--warning)' : null));
+            setMetric('stat-aspect', job.maxAspectRatio, (v) => v.toFixed(2),
+                      (v) => (v > 10 ? 'var(--error)' : v > 5 ? 'var(--warning)' : null));
+            // A negative scaled Jacobian is an inverted element, which is a
+            // pass/fail condition rather than a score worth printing.
+            setMetric('stat-sj', job.minScaledJacobian,
+                      (v) => (v < 0 ? 'INVERTED' : v.toFixed(3)),
+                      (v) => (v < 0 || v < 0.2 ? 'var(--error)' : null));
 
             viewMode = 'mesh';
             setViewButtons(job);

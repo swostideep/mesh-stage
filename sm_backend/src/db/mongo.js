@@ -31,7 +31,12 @@ const jobSchema = new mongoose.Schema({
     maxSkewness: { type: Number, default: null },
     meanSkewness: { type: Number, default: null },
     highSkewCount: { type: Number, default: 0 },
+    minAngle: { type: Number, default: null },
+    maxAspectRatio: { type: Number, default: null },
+    minScaledJacobian: { type: Number, default: null },
+    highAspectCount: { type: Number, default: 0 },
     freeEdges: { type: Number, default: null },
+    inconsistentEdges: { type: Number, default: null },
     error: { type: String, default: null },
     createdAt: { type: Date, default: Date.now },
     completedAt: { type: Date, default: null }
