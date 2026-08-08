@@ -17,13 +17,22 @@ const PATTERNS = [
     ['maxSkewness', /Max 3D Skewness[^:]*:\s*([0-9.eE+-]+)/i],
     ['meanSkewness', /Mean Skewness\s*:\s*([0-9.eE+-]+)/i],
     ['highSkewCount', /High Skew Elements\s*:\s*(\d+)/i],
-    ['freeEdges', /Free Edges[^:]*:\s*(\d+)/i]
+    ['minAngle', /Min Angle[^:]*:\s*([0-9.eE+-]+)/i],
+    ['maxAspectRatio', /Max Aspect Ratio\s*:\s*([0-9.eE+-]+|inf)/i],
+    ['minScaledJacobian', /Min Scaled Jacobian\s*:\s*([0-9.eE+-]+)/i],
+    ['highAspectCount', /High Aspect Elements\s*:\s*(\d+)/i],
+    ['freeEdges', /Free Edges[^:]*:\s*(\d+)/i],
+    ['inconsistentEdges', /Inconsistent Edges\s*:\s*(\d+)/i]
 ];
 
 function parseStats(text, stats) {
     for (const [key, pattern] of PATTERNS) {
         const m = text.match(pattern);
-        if (m) stats[key] = Number(m[1]);
+        if (!m) continue;
+        const value = Number(m[1]);
+        // `inf` would parse to Infinity and poison the document; the engine
+        // clamps aspect ratio for this reason, so treat it as unreported.
+        if (Number.isFinite(value)) stats[key] = value;
     }
 }
 
@@ -51,10 +60,7 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
             inputPath,
             String(density),
             outputPath,
-            String(options.defeatureTol ?? 0.05),
-            String(options.patchHoles ?? 'true'),
-            String(options.growthRate ?? 1.2),
-            String(options.proximity ?? 'true')
+            String(options.growthRate ?? 1.2)
         ];
 
         const child = spawn(config.engine.binary, args, {
@@ -74,6 +80,7 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
 
         const stats = {};
         let stderrTail = '';
+        let stdoutTail = '';
 
         const timer = setTimeout(() => {
             entry.timedOut = true;
@@ -83,8 +90,19 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
 
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (chunk) => {
-            parseStats(chunk, stats);
+            // The live log goes out unbuffered; only the scrape waits for a
+            // newline. A report line split across a pipe boundary would
+            // otherwise match nothing and the metric would silently be absent.
             events.publish(jobId, { log: chunk });
+
+            stdoutTail += chunk;
+            const lastBreak = stdoutTail.lastIndexOf('\n');
+            if (lastBreak >= 0) {
+                parseStats(stdoutTail.slice(0, lastBreak + 1), stats);
+                stdoutTail = stdoutTail.slice(lastBreak + 1);
+            }
+            // Guard against an engine that emits megabytes without a newline.
+            if (stdoutTail.length > 65536) stdoutTail = stdoutTail.slice(-8192);
         });
 
         child.stderr.setEncoding('utf8');
@@ -102,6 +120,8 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
         child.on('close', (code, signal) => {
             clearTimeout(timer);
             running.delete(jobId);
+            // A last line with no trailing newline is still worth parsing.
+            if (stdoutTail) parseStats(stdoutTail, stats);
 
             if (entry.cancelled) {
                 const err = new Error('cancelled');
@@ -127,4 +147,5 @@ function run({ jobId, inputPath, outputPath, density, options = {} }) {
     });
 }
 
-module.exports = { run, cancel, isRunning, runningCount };
+// parseStats is exported for the chunk-splitting regression test.
+module.exports = { run, cancel, isRunning, runningCount, parseStats };

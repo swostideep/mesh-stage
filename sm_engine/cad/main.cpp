@@ -1,11 +1,10 @@
 // Command line front end for the surface mesher.
 //
-// Usage: voronoi_mesh <input.step> [deflection] [output.obj] [defeatureTol]
-//                     [patchHoles] [growthRate] [proximity]
+// Usage: voronoi_mesh <input> [density] [output.obj] [growthRate]
 //
 // The phase banners and the summary keys are part of the contract with the API
 // server, which streams this output to the browser and scrapes the node,
-// element and skewness counts out of it.
+// element and quality figures out of it.
 
 #include <cstddef>
 #include <cstdio>
@@ -40,9 +39,10 @@ double argDouble(int argc, char** argv, int index, double fallback) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr,
-                     "usage: %s <input.step|.iges|.brep|.stl|.obj> [density] [output.obj]\n",
-                     argv[0]);
+        std::fprintf(
+            stderr,
+            "usage: %s <input.step|.iges|.brep|.stl|.obj> [density] [output.obj] [growthRate]\n",
+            argv[0]);
         return 2;
     }
 
@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
 
     sm::CadOptions options;
     options.deflection = deflection > 0.0 ? deflection : 0.05;
-    options.growthRate = argDouble(argc, argv, 6, 1.2);
+    options.growthRate = argDouble(argc, argv, 4, 1.2);
     options.healTopology = true;
     options.writePreview = true;
 
@@ -149,12 +149,17 @@ int main(int argc, char** argv) {
     std::cout << "Max 3D Skewness Found    : " << report.maxSkewness << std::endl;
     std::cout << "Mean Skewness            : " << report.meanSkewness << std::endl;
     std::cout << "High Skew Elements       : " << report.highSkewCount << std::endl;
+    std::cout << "Min Angle (deg)          : " << report.minAngle << std::endl;
+    std::cout << "Max Aspect Ratio         : " << report.maxAspectRatio << std::endl;
+    std::cout << "Min Scaled Jacobian      : " << report.minScaledJacobian << std::endl;
+    std::cout << "High Aspect Elements     : " << report.highAspectCount << std::endl;
     std::cout << "Welded Duplicate Nodes   : " << report.duplicateNodesWelded << std::endl;
     std::cout << "Degenerate Dropped       : " << report.degenerateDropped << std::endl;
     std::cout << "Surface Edge Flips       : " << report.surfaceFlips << std::endl;
     std::cout << "Faces Skipped            : " << report.failedFaces << std::endl;
     std::cout << "Free Edges (watertight)  : " << report.freeEdges << std::endl;
     std::cout << "Non-Manifold Edges       : " << report.nonManifoldEdges << std::endl;
+    std::cout << "Inconsistent Edges       : " << report.inconsistentEdges << std::endl;
     std::cout << "Total Wall Time          : " << totalMs << " ms" << std::endl;
     std::cout << "==============================================\n" << std::endl;
 
